@@ -6,9 +6,10 @@
 import { Hono } from 'hono'
 import type { AppContext } from '../app.js'
 import { rewriteItems } from '../services/rewrite.js'
+import { readAnnotations } from '../services/annotations.js'
 import type { RewriteRequest, RewriteResponse, ErrorResponse } from '../../types/api.js'
 
-export function rewriteRoute(_ctx: AppContext) {
+export function rewriteRoute(ctx: AppContext) {
   const app = new Hono()
 
   app.post('/rewrite', async (c) => {
@@ -18,7 +19,8 @@ export function rewriteRoute(_ctx: AppContext) {
       return c.json(err, 400)
     }
     try {
-      const results = await rewriteItems(req.fullDoc, req.items)
+      const existing = await readAnnotations(ctx.filePath)
+      const results = await rewriteItems(req.fullDoc, req.items, existing)
       const body: RewriteResponse = { results }
       return c.json(body)
     } catch (e) {

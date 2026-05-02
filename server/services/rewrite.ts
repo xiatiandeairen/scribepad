@@ -6,14 +6,37 @@
  */
 import { runClaudeCli } from '../adapters/claude-cli.js'
 import type { RewriteItem, RewriteResultEntry } from '../../types/api.js'
+import type { Annotation } from '../../types/annotation.js'
 
 export async function rewriteItems(
   fullDoc: string,
   items: RewriteItem[],
+  existingAnnotations: Annotation[] = [],
 ): Promise<RewriteResultEntry[]> {
-  const prompt = buildPrompt(fullDoc, items)
+  // 防漂移过滤:剔除 id 命中 state=decided 的批注的请求项
+  const decidedIds = new Set(
+    existingAnnotations.filter((a) => a.state === 'decided').map((a) => a.id),
+  )
+  const filtered: RewriteItem[] = []
+  const skipped: RewriteItem[] = []
+  for (const it of items) {
+    if (decidedIds.has(it.id)) skipped.push(it)
+    else filtered.push(it)
+  }
+  if (filtered.length === 0) {
+    throw new Error('all selected items are state=decided; cannot rewrite')
+  }
+
+  const prompt = buildPrompt(fullDoc, filtered)
   const raw = await runClaudeCli(prompt)
-  return parseRewriteJson(raw, items)
+  const results = parseRewriteJson(raw, filtered)
+
+  // 被过滤项保持 rewritten = '' 占位,按原 items 顺序合并返回
+  const resultMap = new Map(results.map((r) => [r.id, r.rewritten]))
+  return items.map((it) => ({
+    id: it.id,
+    rewritten: decidedIds.has(it.id) ? '' : (resultMap.get(it.id) ?? ''),
+  }))
 }
 
 function buildPrompt(fullDoc: string, items: RewriteItem[]): string {
