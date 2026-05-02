@@ -1,0 +1,7 @@
+node_modules
+dist
+.sprint
+docs
+sample.md
+*.md
+package-lock.json

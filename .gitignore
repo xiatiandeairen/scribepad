@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.sprint/
+*.annotations.json
+.DS_Store
+.vscode/
+.idea/
+.env*
+!.env.example
+playwright-report/
+test-results/
+coverage/
