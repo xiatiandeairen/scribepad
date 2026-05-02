@@ -50,7 +50,7 @@
 | Version | Core Direction | Core-Metric Delta | Status | Cycle | Milestones |
 |---------|----------------|-------------------|--------|-------|------------|
 | v0.1 | 跑通选区批注 + AI 改写 + diff 的端到端闭环 | ↑ 端到端选区批注 0→1;↑ 跨段/跨格式锚点 0→1;↑ e2e 测试 0→36 条(measured) | released | 2026.05.01 - 2026.05.01 | M1-M2 |
-| v0.2 — 活文档 | 段落级状态机 + 已决定段防 AI 漂移;v0.2 末跑 dogfood gate | TBD | planning | TBD | M3 |
+| v0.2 — 评论 + 拍板 + 防漂移 | 重建 MVP 评论交互修改 + 拍板锁定 + AI 改写跳过已决定段;dogfood gate | TBD | planning | TBD | M3 |
 | v0.3 — TBD by dogfood | 由 v0.2 dogfood gate 反馈决定;候选见 v0.3 详情 | TBD | planning | TBD | M4 |
 | v0.4 — alpha 邀请 | 邀请 ≥3 名非朋友 vibe coder 试用 1-2 周;v0.4 末跑 alpha gate | TBD | planning | TBD | M5 |
 | v0.5 — 公开发布 | 范围由 alpha gate 反馈定;README + demo + 一次集中曝光 | TBD | planning | TBD | M6 |
@@ -78,25 +78,26 @@
 | 跨段选区可用 | — | 是 | 新基线(measured via test 2.6) | e2e.mjs |
 | sidecar JSON 锚点格式 | — | { srcStart, srcEnd, text } | 新基线(measured) | reader.js |
 
-#### v0.2 — 活文档
+#### v0.2 — 评论 + 拍板 + 防漂移
 
-- **Strategic intent**: 验证 wedge — "段落级状态机 + 已决定段防漂移"是否真能解决 vibe coder "改写漂移、决定丢失"的痛点。**这是项目的核心命题**,若 dogfood gate 不通过则停或重做,不硬上 v0.3
-- **Input/Output**: Invest 工程量 ~2 周(estimated, 业余每周 5-10h, 日历 4-6 周)→ 段落级 4 态(草稿 / 讨论中 / 已决定 / 已执行)+ 已决定段防漂移机制(expected: AI 改写时跳过已决定段,user 可显式 override)
-- **Priority rationale**: v0.1 核心闭环已就绪;dogfood 中作者高频遇到"AI 把上次定的改回去"的痛点,这是 scribepad 与"通用 markdown 工具"的核心区分点;无外部依赖
-- **Risks and dependencies**: Dependencies: 无外部依赖;risks: 段落级状态机的 UI 复杂度可能超预期;risks: 用户感知不到"已决定段防漂移"的价值,wedge 失效命题被否
-- **Success metric**: 4 态状态机端到端可用;**Gate(dogfood ≥1 个月):作者写 ≥1 份真实 plan,使用"已决定"标记 ≥10 次,self-report"AI 漂移焦虑"显著下降。Gate 不通过 → 停或重做 v0.2,不进 v0.3**
+- **Strategic intent**: 验证 wedge — "拍板锁定 + AI 改写时跳过已决定段"是否真能解决 vibe coder "AI 反复改飞、决定丢失"的痛点。**这是项目的核心命题**;若 dogfood gate 不通过则停或重做,不硬上 v0.3。**v0.2 范围严格收敛至此 — 22 轮探索性讨论中浮现的 audit dashboard / AI 摘要 / 5 sidebar 组件 / inline 编辑 / 版本归档等富功能,全部 defer 到 v0.3+(详见 [docs/decision/v0.2-scope.md](./decision/v0.2-scope.md))**
+- **Input/Output**: Invest 工程量 ~4 天(estimated, 业余每周 5-10h, 日历 4-6 周)→ 重建 MVP 核心(选区评论 + AI 改写 + diff modal + sidebar 批注列表)+ 拍板状态机(2 态 draft/decided)+ AI 改写时 prompt 自动 exclude state=decided 段
+- **Priority rationale**: v0.1 已删 MVP 代码,foundation 已就绪;dogfood 中作者高频遇到"AI 把上次定的改回去"的痛点 — 这是 scribepad 区别于通用 markdown 工具的核心区分点;无外部依赖
+- **Risks and dependencies**: Dependencies: 无外部依赖;risks: 用户感知不到"拍板防漂移"的真实价值,wedge 失效命题被否(预案:停或重做);risks: 22Q 讨论中浮现的更宏大产品方向被压回 v0.3+,可能事后被证明 v0.2 太瘦
+- **Success metric**: 7 个功能(基础 5 + 新加 2)端到端可用;**Gate(dogfood ≥1 个月):作者写 ≥1 份真实 plan(scribepad 项目自身的下版 plan 即可),使用"拍板" ≥10 次,self-report"AI 漂移焦虑"显著下降。Gate 不通过 → 停或重做 v0.2,不进 v0.3**
 - **Core value**:
-  1. 第一次每个 plan 段落有显式状态(草稿 / 讨论中 / 已决定 / 已执行)
-  2. 第一次已决定段落被显式保护,AI 改写时该段不动
-  3. 第一次能在 sidebar 一眼看到"哪些定了哪些还在飞"
+  1. 第一次能在新底座(Vite + TS)上完成 v0.1 baseline 功能(评论交互修改可用)
+  2. 第一次段 / 选区有显式状态(draft / decided)
+  3. 第一次已决定段被 AI 改写时显式跳过,**这是 scribepad 与通用 markdown 工具的核心区分点**
 - **User coverage**: author dogfood
 - **Core metric**(v0.1 → v0.2):
 
 | Metric | v0.1 | v0.2 | Delta | Source |
 |--------|------|------|-------|--------|
-| 段落状态枚举数 | 0 | 4 | 新基线(target value, pending validation) | TBD |
+| 状态枚举数 | 0 | 2(draft/decided) | 新基线(target value, pending validation) | TBD |
 | 已决定段防漂移成功率 | n/a | 100% | 新基线(target value, pending validation) | TBD |
 | dogfood 中"AI 漂移"投诉次数(self-report) | 高(estimated) | <1/周 | 显著下降(target value, pending validation) | dogfood log |
+| 拍板使用次数 | 0 | ≥10/月 | 新基线(target,gate 阈值) | sidecar log |
 
 #### v0.3 — TBD by v0.2 dogfood gate
 

@@ -6,3 +6,5 @@
 
 - roadmap: docs/roadmap.md
 - tech-selection: docs/tech-selection.md
+- architecture: docs/architecture.md
+- decision/v0.2-scope: docs/decision/v0.2-scope.md
