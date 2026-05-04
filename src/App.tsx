@@ -28,6 +28,8 @@ import { Reader } from './components/Reader'
 import { Sidebar } from './components/Sidebar'
 import { DiffModal } from './components/DiffModal'
 import { getAnnotations, getFile, requestRewrite, saveAnnotations, saveDocument } from './lib/api'
+import { remapAnchorsAfterRewrite, resolveAnchorToSourceRange } from './lib/anchor'
+import { renderMarkdown } from './lib/markdown'
 
 /** Generate a sortable, collision-resistant id without bringing in a uuid dep. */
 function makeAnnotationId(): string {
@@ -93,7 +95,13 @@ export function App(): JSX.Element {
       return
     }
     const range = sel.getRangeAt(0)
-    setSelectionRect(range.getBoundingClientRect())
+    // For multi-line selections, getBoundingClientRect's .right is the
+    // widest line's right edge (often the paragraph's right margin), which
+    // is far from where the user actually finished selecting. Use the LAST
+    // line rect so the popover anchors to the visual end of the selection.
+    const rects = range.getClientRects()
+    const endRect = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect()
+    setSelectionRect(endRect as DOMRect)
   }, [])
 
   const clearSelection = useCallback((): void => {
@@ -102,6 +110,44 @@ export function App(): JSX.Element {
     const sel = window.getSelection()
     sel?.removeAllRanges()
   }, [])
+
+  const dismissDraft = useCallback(
+    (id: string): void => {
+      const next = annotations.filter((a) => a.id !== id)
+      setAnnotations(next)
+      persistAnnotations(next)
+      if (activeId === id) setActiveId(undefined)
+    },
+    [annotations, activeId, persistAnnotations],
+  )
+
+  useEffect(() => {
+    const activeDraft =
+      activeId != null
+        ? (annotations.find(
+            (a) =>
+              a.id === activeId &&
+              a.status === 'open' &&
+              a.state === 'draft' &&
+              !a.instruction &&
+              a.ai_suggestion == null,
+          ) ?? null)
+        : null
+
+    if (!activeDraft) return
+
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (target.closest('.popover')) return
+      if (target.closest(`.anno-card[data-anno-id="${activeDraft.id}"]`)) return
+      dismissDraft(activeDraft.id)
+      clearSelection()
+    }
+
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [annotations, activeId, dismissDraft, clearSelection])
 
   // ── Mark click → activate + maybe open modal ───────────────────────────
   const handleMarkClick = useCallback(
@@ -116,24 +162,34 @@ export function App(): JSX.Element {
     [annotations],
   )
 
-  // ── Create from popover ────────────────────────────────────────────────
+  // ── Create draft annotation from any anchor ─────────────────────────────
+  // Shared by both creation paths:
+  //   - popover click (drag-select committed) → uses selectionAnchor
+  //   - sentence click (Reader's onCreateAnchor) → direct create, no popover
+  const handleCreateFromAnchor = useCallback(
+    (anchor: Anchor): void => {
+      const fresh: Annotation = {
+        id: makeAnnotationId(),
+        anchor,
+        state: 'draft',
+        status: 'open',
+        history: [],
+        created_at: new Date().toISOString(),
+        ai_suggestion: null,
+      }
+      const next = [...annotations, fresh]
+      setAnnotations(next)
+      setActiveId(fresh.id)
+      persistAnnotations(next)
+    },
+    [annotations, persistAnnotations],
+  )
+
   const handleCreateAnnotation = useCallback((): void => {
     if (!selectionAnchor) return
-    const fresh: Annotation = {
-      id: makeAnnotationId(),
-      anchor: selectionAnchor,
-      state: 'draft',
-      status: 'open',
-      history: [],
-      created_at: new Date().toISOString(),
-      ai_suggestion: null,
-    }
-    const next = [...annotations, fresh]
-    setAnnotations(next)
-    setActiveId(fresh.id)
-    persistAnnotations(next)
+    handleCreateFromAnchor(selectionAnchor)
     clearSelection()
-  }, [annotations, selectionAnchor, persistAnnotations, clearSelection])
+  }, [selectionAnchor, handleCreateFromAnchor, clearSelection])
 
   // ── Submit instruction → request AI rewrite ────────────────────────────
   // Two-phase optimistic update:
@@ -228,18 +284,47 @@ export function App(): JSX.Element {
   }, [])
 
   // ── Modal actions ──────────────────────────────────────────────────────
-  // applyRewrite — splice the AI text into content at anchor.srcStart..srcEnd,
-  // mark annotation status='applied' (so it leaves the sidebar), and persist
-  // both the .md and the sidecar. `lock` flips state='decided' first.
+  // applyRewrite — splice the AI rewrite into the source at the anchor's
+  // location, mark the annotation status='applied' (so it leaves the
+  // sidebar), and persist both the .md and the sidecar. `lock` flips
+  // state='decided' before applying.
+  //
+  // The anchor → source-range mapping reads `data-src-start/end` on the
+  // target sentence span(s). For sub-sentence anchors on plain-text spans
+  // we splice precisely; for spans containing inline markdown formatting
+  // we degrade to the full-sentence range (preserves `**` / `*` / etc.).
   const applyRewrite = useCallback(
     (id: string, lock: boolean): void => {
       const target = annotations.find((a) => a.id === id)
       if (!target || target.ai_suggestion == null) return
 
-      const { srcStart, srcEnd } = target.anchor
+      const reader = document.querySelector<HTMLDivElement>('.reader')
+      if (!reader) {
+        setError('reader not mounted')
+        return
+      }
+      const range = resolveAnchorToSourceRange(reader, target.anchor)
+      if (!range) {
+        setError('anchor no longer locatable in document')
+        return
+      }
+      const [srcStart, srcEnd] = range
       const newContent = content.slice(0, srcStart) + target.ai_suggestion + content.slice(srcEnd)
 
-      const next = annotations.map((a) =>
+      const oldRoot = document.createElement('div')
+      oldRoot.innerHTML = renderMarkdown(content)
+      const newRoot = document.createElement('div')
+      newRoot.innerHTML = renderMarkdown(newContent)
+
+      const rebased = remapAnchorsAfterRewrite(
+        oldRoot,
+        newRoot,
+        annotations,
+        id,
+        [srcStart, srcEnd],
+        target.ai_suggestion,
+      )
+      const next = rebased.map((a) =>
         a.id === id
           ? {
               ...a,
@@ -304,7 +389,7 @@ export function App(): JSX.Element {
   const decidedCount = annotations.filter(
     (a) => a.status === 'open' && a.state === 'decided',
   ).length
-  const badgeText = visibleCount === 0 ? '0 批注' : `${visibleCount} 批注 · ${decidedCount} 已定`
+  const badgeText = `${visibleCount} 批注 · ${decidedCount} 已定`
 
   // Hide popover while a modal is up — otherwise the popover floats over the
   // backdrop and steals clicks meant for cancel.
@@ -327,6 +412,7 @@ export function App(): JSX.Element {
           annotations={annotations}
           activeId={activeId}
           onSelectionAnchor={handleSelectionAnchor}
+          onCreateAnchor={handleCreateFromAnchor}
           onMarkClick={handleMarkClick}
         />
         <Sidebar
@@ -342,30 +428,42 @@ export function App(): JSX.Element {
         />
       </main>
 
-      {showPopover && selectionRect && (
-        <div
-          className="popover"
-          style={{
-            position: 'fixed',
-            // Anchor above the selection. The CSS `.popover` rule positions
-            // its tail with absolute offsets that assume a static parent;
-            // we override left/top via inline style so it tracks the live rect.
-            top: selectionRect.top - 32,
-            left: selectionRect.left + selectionRect.width / 2,
-            transform: 'translateX(-50%)',
-            bottom: 'auto',
-            zIndex: 999,
-          }}
-          onMouseDown={(e) => {
-            // Prevent the click from collapsing the selection before our
-            // handler fires (mousedown clears native selection in most browsers).
-            e.preventDefault()
-          }}
-          onClick={handleCreateAnnotation}
-        >
-          💬 批注
-        </div>
-      )}
+      {showPopover &&
+        selectionRect &&
+        (() => {
+          // Inline placement: sit on the same baseline as the selection's last
+          // line, just to its right. Flip to the left side when the selection
+          // ends near the viewport's right edge so the popover stays on screen.
+          const POPOVER_WIDTH_PX = 80
+          const GAP_PX = 8
+          const VIEWPORT_PAD_PX = 12
+          const overflowsRight =
+            selectionRect.right + GAP_PX + POPOVER_WIDTH_PX > window.innerWidth - VIEWPORT_PAD_PX
+          const left = overflowsRight
+            ? Math.max(VIEWPORT_PAD_PX, selectionRect.left - GAP_PX - POPOVER_WIDTH_PX)
+            : selectionRect.right + GAP_PX
+          return (
+            <div
+              className="popover popover-inline"
+              style={{
+                position: 'fixed',
+                top: selectionRect.top,
+                left,
+                transform: 'none',
+                bottom: 'auto',
+                zIndex: 999,
+              }}
+              onMouseDown={(e) => {
+                // Prevent the click from collapsing the selection before our
+                // handler fires (mousedown clears native selection in most browsers).
+                e.preventDefault()
+              }}
+              onClick={handleCreateAnnotation}
+            >
+              💬 批注
+            </div>
+          )
+        })()}
 
       <DiffModal
         isOpen={modalOpen}

@@ -205,7 +205,56 @@ button.danger {
   font-family: ui-monospace, 'SF Mono', monospace;
 }
 
-/* Mark + 边框 + 边框外右上角徽章图标 */
+/* Sentence-span hover affordance — signals "this is the addressable
+   unit; click to annotate". Suppressed on sentences already covered by an
+   annotation (the mark there has its own visual state).  */
+.reader [data-sentence-idx] {
+  position: relative;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.reader [data-sentence-idx]:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.reader ::selection {
+  background: var(--mark-draft);
+  color: inherit;
+}
+
+.reader [data-sentence-idx]:hover::after {
+  content: '💬 批注';
+  position: absolute;
+  right: 0;
+  top: -30px;
+  z-index: 20;
+  background: #1d1d1f;
+  color: #fff;
+  padding: 4px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+
+.reader [data-sentence-idx][data-anno-covered] {
+  cursor: default;
+}
+
+.reader [data-sentence-idx][data-anno-covered]:hover {
+  background: transparent;
+}
+
+.reader [data-sentence-idx][data-anno-covered]:hover::after {
+  display: none;
+}
+
+/* Mark + 边框 + 末尾徽章图标 */
 mark.anno {
   position: relative;
   padding: 1px 4px;
@@ -215,9 +264,12 @@ mark.anno {
 }
 
 mark.anno::after {
-  position: absolute;
-  top: -9px;
-  right: -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  vertical-align: text-top;
+  transform: translateY(-0.45em);
   font-size: 10px;
   line-height: 1;
   padding: 1px 4px;
@@ -346,17 +398,18 @@ mark.anno.decided::after {
 .anno-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
+  border-radius: 8px;
+  padding: 10px 12px;
   box-shadow: var(--shadow-sm);
   font-size: 13px;
-  line-height: 1.5;
-  margin-bottom: 12px;
+  line-height: 1.4;
+  margin-bottom: 8px;
 }
 
 .anno-card.deciding {
   background: var(--card-deciding-bg);
   border-color: var(--card-deciding-border);
+  cursor: pointer;
 }
 
 .anno-card.decided {
@@ -367,46 +420,53 @@ mark.anno.decided::after {
 .anno-card .head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 8px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 6px;
+}
+
+.anno-card:not(:has(textarea)) .head {
+  margin-bottom: 0;
 }
 
 .anno-card .text {
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.35;
   color: var(--fg);
   flex: 1;
-}
-
-.anno-card .menu-btn {
-  font-size: 12px;
-  padding: 0 4px;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .anno-card .row {
   display: flex;
   gap: 6px;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .anno-card .input,
-.anno-card input[type='text'] {
+.anno-card input[type='text'],
+.anno-card textarea {
   flex: 1;
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 13px;
+  line-height: 18px;
   background: var(--surface);
   color: var(--fg);
+  resize: none;
+  max-height: 102px;
+  overflow-y: auto;
+  font-family: inherit;
 }
 
 .anno-card .input:focus,
-.anno-card input[type='text']:focus {
+.anno-card input[type='text']:focus,
+.anno-card textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   border-color: var(--accent);
@@ -421,6 +481,8 @@ mark.anno.decided::after {
 .anno-card .status-line {
   font-size: 12px;
   color: var(--muted);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .anno-card .status-line.thinking {
@@ -535,12 +597,39 @@ mark.anno.decided::after {
   transform: rotate(45deg);
 }
 
+/* Inline placement: popover sits beside the selection's last line, no
+   downward tail (the tail only made sense when popover floated above the
+   selection center). */
+.popover.popover-inline {
+  padding: 4px 10px;
+}
+
+.popover.popover-inline::after {
+  display: none;
+}
+
 [data-theme='dark'] .popover {
   background: #f5f5f7;
   color: #1d1d1f;
 }
 
+[data-theme='dark'] .reader [data-sentence-idx]:hover::after {
+  background: #f5f5f7;
+  color: #1d1d1f;
+}
+
 /* Diff modal (deciding state) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
 .diff-modal {
   background: var(--surface);
   border-radius: 14px;

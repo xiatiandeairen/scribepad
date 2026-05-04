@@ -4,9 +4,9 @@
  * Renders a card for each `status === 'open'` annotation. Cards expose four
  * visual variants tied to the v0.2 state machine (see docs/plan.md §1.4):
  *
- *   draft               → input + ↵ submit (user types instruction for AI)
- *   discussed (no AI)   → ⏳ thinking spinner (AI rewrite in flight)
- *   discussed (with AI) → ✏️ AI returned + 查看 → button (open DiffModal)
+ *   draft               → autosizing textarea + ↵ submit
+ *   discussed (no AI)   → one-line "codex thinking"
+ *   discussed (with AI) → one-line "AI returned"; click card opens DiffModal
  *   decided             → 🔒 locked, AI skip
  *
  * Plan.md uses transitional names "thinking"/"deciding"; both map to the
@@ -15,7 +15,7 @@
  * The component is presentational: all state mutations are forwarded to
  * callbacks supplied by the parent App coordinator. No api/* imports.
  */
-import { useState, type KeyboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import type { Annotation } from '../../types/annotation'
 
 export interface SidebarProps {
@@ -79,30 +79,32 @@ function AnnotationCard(props: CardProps): JSX.Element {
   if (variant === 'decided') classes.push('decided')
   if (props.isActive) classes.push('active')
 
+  const handleCardClick = (): void => {
+    if (variant === 'deciding') props.onOpenModal(anno.id)
+  }
+
   return (
-    <div className={classes.join(' ')} data-anno-id={anno.id}>
+    <div
+      className={classes.join(' ')}
+      data-anno-id={anno.id}
+      onClick={handleCardClick}
+      role={variant === 'deciding' ? 'button' : undefined}
+      tabIndex={variant === 'deciding' ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (variant !== 'deciding') return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          props.onOpenModal(anno.id)
+        }
+      }}
+    >
       <div className="head">
         <div className="text">{anno.anchor.text}</div>
-        <button
-          type="button"
-          className="menu-btn"
-          aria-label="更多操作"
-          // v0.1: render-only; popup menu logic deferred to v0.2+ UX polish.
-        >
-          ⋯
-        </button>
+        {variant === 'thinking' && <span className="status-line thinking">codex 思考中…</span>}
+        {variant === 'deciding' && <span className="status-line deciding">AI 已返回</span>}
+        {variant === 'decided' && <span className="status-line">已锁定</span>}
       </div>
       {variant === 'draft' && <DraftRow anno={anno} onSubmit={props.onSubmitInstruction} />}
-      {variant === 'thinking' && <div className="status-line thinking">⏳ claude 思考中…</div>}
-      {variant === 'deciding' && (
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <span className="status-line deciding">✏️ AI 已返回</span>
-          <button type="button" className="primary" onClick={() => props.onOpenModal(anno.id)}>
-            查看 →
-          </button>
-        </div>
-      )}
-      {variant === 'decided' && <div className="status-line">🔒 已锁定 · AI 跳过</div>}
     </div>
   )
 }
@@ -114,6 +116,14 @@ function DraftRow(props: {
   // Local draft text per card; persists across re-renders until parent
   // transitions the card out of draft.
   const [text, setText] = useState<string>(props.anno.instruction ?? '')
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const resize = (): void => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
 
   const submit = (): void => {
     const value = text.trim()
@@ -121,8 +131,8 @@ function DraftRow(props: {
     props.onSubmit(props.anno.id, value)
   }
 
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       submit()
     }
@@ -130,11 +140,18 @@ function DraftRow(props: {
 
   return (
     <div className="row">
-      <input
-        type="text"
+      <textarea
+        ref={(el) => {
+          textareaRef.current = el
+          resize()
+        }}
+        rows={1}
         placeholder="告诉 AI 怎么改…"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value)
+          requestAnimationFrame(resize)
+        }}
         onKeyDown={onKeyDown}
       />
       <button type="button" className="primary" onClick={submit}>
@@ -150,9 +167,7 @@ type CardVariant = 'draft' | 'thinking' | 'deciding' | 'decided'
  * Map persistent annotation state → card variant.
  *
  * `discussed` splits into thinking vs deciding based on whether the AI
- * suggestion has arrived yet. `executed` shouldn't appear here in practice
- * (status flips to 'applied' on accept), but we render it as decided to be
- * defensive against transient writes.
+ * suggestion has arrived yet.
  */
 function pickVariant(anno: Annotation): CardVariant {
   switch (anno.state) {
@@ -161,8 +176,6 @@ function pickVariant(anno: Annotation): CardVariant {
     case 'discussed':
       return anno.ai_suggestion ? 'deciding' : 'thinking'
     case 'decided':
-      return 'decided'
-    case 'executed':
       return 'decided'
   }
 }

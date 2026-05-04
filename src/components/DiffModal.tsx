@@ -80,7 +80,7 @@ export function DiffModal(props: DiffModalProps) {
   const {
     isOpen,
     annotation,
-    agentName = 'claude',
+    agentName = 'codex',
     elapsedSeconds,
     attempt,
     onAccept,
