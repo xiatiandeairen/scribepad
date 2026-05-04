@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Popup options</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --surface: #ffffff;
+        --fg: #1f2328;
+        --muted: #6e7781;
+        --border: #d8dee4;
+        --soft: #f6f8fa;
+        --green: #1f883d;
+        --green-bg: #dafbe1;
+        --red-bg: #ffebe9;
+        --blue: #0969da;
+        --shadow: 0 18px 50px rgba(31, 35, 40, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      }
+
+      .page {
+        padding: 24px;
+      }
+
+      .bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      .bar strong {
+        font-size: 15px;
+      }
+
+      .switch {
+        display: inline-flex;
+        padding: 3px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .switch button {
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        padding: 6px 10px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .switch button.active {
+        background: var(--fg);
+        color: #fff;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(360px, 1fr));
+        gap: 22px;
+      }
+
+      .option {
+        min-width: 0;
+      }
+
+      .option-name {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 12px;
+        margin: 0 0 8px;
+      }
+
+      .stage {
+        min-height: 430px;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.72)),
+          repeating-linear-gradient(0deg, transparent 0 31px, rgba(208, 215, 222, 0.42) 32px);
+      }
+
+      .popup {
+        position: relative;
+        width: min(100%, 560px);
+        max-height: 380px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        overflow: visible;
+      }
+
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+      }
+
+      .close {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 16px;
+        cursor: pointer;
+      }
+
+      .badge {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .content {
+        padding: 0 10px 10px;
+      }
+
+      .suggestion {
+        overflow: auto;
+        color: var(--fg);
+      }
+
+      .original {
+        overflow: auto;
+        color: var(--muted);
+      }
+
+      .actions {
+        display: block;
+      }
+
+      .editline {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+      }
+
+      textarea {
+        min-width: 0;
+        width: 100%;
+        height: 30px;
+        min-height: 30px;
+        max-height: 30px;
+        resize: none;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: #fff;
+        color: var(--fg);
+        padding: 5px 8px;
+        font: inherit;
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      .decision {
+        position: absolute;
+        right: 10px;
+        bottom: -34px;
+        display: flex;
+        gap: 4px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      button.action {
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: #fff;
+        color: var(--fg);
+        padding: 8px 11px;
+        font-size: 13px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      button.icon {
+        width: 24px;
+        height: 24px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border-radius: 999px;
+        font-size: 13px;
+        line-height: 1;
+      }
+
+      button.primary {
+        border-color: var(--blue);
+        background: var(--blue);
+        color: #fff;
+      }
+
+      .hint {
+        border-color: transparent;
+        color: var(--muted);
+      }
+
+      /* A: Linear compact */
+      .linear {
+        border-radius: 10px;
+      }
+
+      .linear .content {
+        display: grid;
+        gap: 8px;
+      }
+
+      .linear .suggestion {
+        max-height: 172px;
+        min-height: 118px;
+        padding: 12px;
+        border: 1px solid #aceebb;
+        border-radius: 8px;
+        background: var(--green-bg);
+        font-size: 14px;
+        line-height: 1.58;
+      }
+
+      .linear .original {
+        max-height: 54px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--soft);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .linear .actions {
+        padding-top: 2px;
+      }
+
+      /* B: Writing sheet */
+      .sheet {
+        border-radius: 12px;
+      }
+
+      .sheet .content {
+        display: grid;
+        gap: 10px;
+      }
+
+      .sheet .suggestion {
+        max-height: 218px;
+        min-height: 150px;
+        padding: 4px 2px 6px;
+        font-size: 15px;
+        line-height: 1.72;
+      }
+
+      .sheet .original {
+        max-height: 48px;
+        padding-left: 10px;
+        border-left: 3px solid var(--border);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .sheet .actions {
+        border-top: 1px solid var(--border);
+        padding-top: 8px;
+      }
+
+      /* C: PR patch */
+      .patch {
+        border-radius: 8px;
+      }
+
+      .patch .content {
+        display: grid;
+        gap: 0;
+      }
+
+      .patch .original,
+      .patch .suggestion {
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        font-family: ui-monospace, 'SF Mono', monospace;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .patch .original {
+        max-height: 74px;
+        border-radius: 7px 7px 0 0;
+        background: var(--red-bg);
+      }
+
+      .patch .suggestion {
+        max-height: 178px;
+        min-height: 112px;
+        margin-top: -1px;
+        border-radius: 0 0 7px 7px;
+        background: var(--green-bg);
+      }
+
+      .patch .actions {
+        margin-top: 8px;
+      }
+
+      /* D: Command bar */
+      .command {
+        border-radius: 10px;
+      }
+
+      .command .content {
+        display: grid;
+        gap: 10px;
+      }
+
+      .command .suggestion {
+        max-height: 210px;
+        min-height: 132px;
+        padding: 14px 16px;
+        border-radius: 9px;
+        background: #f0fff4;
+        border: 1px solid #aceebb;
+        font-size: 14px;
+        line-height: 1.68;
+      }
+
+      .command .original {
+        max-height: 0;
+        opacity: 0;
+      }
+
+      .command .actions {
+        padding: 6px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--soft);
+      }
+
+      .command textarea {
+        background: #fff;
+      }
+
+      .command .decision {
+        bottom: -34px;
+      }
+
+      @media (max-width: 920px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .command .decision {
+          bottom: -34px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="bar">
+        <strong>批注 popup 方案对比</strong>
+        <div class="switch" aria-label="文本长度">
+          <button class="active" data-mode="short">短文本</button>
+          <button data-mode="long">长文本</button>
+        </div>
+      </div>
+
+      <section class="grid">
+        <article class="option">
+          <p class="option-name"><span>方案 A</span><span>Linear compact</span></p>
+          <div class="stage">
+            <div class="popup linear">
+              <div class="top">
+                <span class="badge">改写建议</span>
+                <button class="close">×</button>
+              </div>
+              <div class="content">
+                <div class="suggestion" data-new></div>
+                <div class="original" data-old></div>
+                <div class="actions">
+                  <div class="editline">
+                    <textarea rows="1" placeholder="继续修改..."></textarea>
+                    <button class="action hint icon" title="重写" aria-label="重写">↻</button>
+                  </div>
+                  <div class="decision">
+                    <button class="action primary icon" title="接受" aria-label="接受">✓</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="option">
+          <p class="option-name"><span>方案 B</span><span>Writing sheet</span></p>
+          <div class="stage">
+            <div class="popup sheet">
+              <div class="top">
+                <span class="badge">建议</span>
+                <button class="close">×</button>
+              </div>
+              <div class="content">
+                <div class="suggestion" data-new></div>
+                <div class="original" data-old></div>
+                <div class="actions">
+                  <div class="editline">
+                    <textarea rows="1" placeholder="继续修改..."></textarea>
+                    <button class="action hint icon" title="重写" aria-label="重写">↻</button>
+                  </div>
+                  <div class="decision">
+                    <button class="action primary icon" title="接受" aria-label="接受">✓</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="option">
+          <p class="option-name"><span>方案 C</span><span>PR patch</span></p>
+          <div class="stage">
+            <div class="popup patch">
+              <div class="top">
+                <span class="badge">diff</span>
+                <button class="close">×</button>
+              </div>
+              <div class="content">
+                <div class="original" data-old></div>
+                <div class="suggestion" data-new></div>
+                <div class="actions">
+                  <div class="editline">
+                    <textarea rows="1" placeholder="继续修改..."></textarea>
+                    <button class="action hint icon" title="重写" aria-label="重写">↻</button>
+                  </div>
+                  <div class="decision">
+                    <button class="action primary icon" title="接受" aria-label="接受">✓</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="option">
+          <p class="option-name"><span>方案 D</span><span>Command bar</span></p>
+          <div class="stage">
+            <div class="popup command">
+              <div class="top">
+                <span class="badge">改写</span>
+                <button class="close">×</button>
+              </div>
+              <div class="content">
+                <div class="suggestion" data-new></div>
+                <div class="original" data-old></div>
+                <div class="actions">
+                  <div class="editline">
+                    <textarea rows="1" placeholder="继续修改..."></textarea>
+                    <button class="action hint icon" title="重写" aria-label="重写">↻</button>
+                  </div>
+                  <div class="decision">
+                    <button class="action primary icon" title="接受" aria-label="接受">✓</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const samples = {
+        short: {
+          old: '核心诉求是会话能够即时撤销，且敏感载荷不暴露在客户端。',
+          next: '核心目标是支持会话即时撤销，同时避免敏感载荷暴露在客户端。',
+        },
+        long: {
+          old: '当前业务背景是：现有的 session token 直接存放在浏览器 cookie 中，而合规团队在 2026 年第二季度提出，需要将其重构为满足 SOC2 要求的会话管理方案。核心诉求是会话能够即时撤销，且敏感载荷不暴露在客户端。',
+          next:
+            '当前会话方案需要从直接暴露 token 的模式，调整为符合 SOC2 要求的服务端会话管理。新的方案应支持即时撤销、降低客户端敏感信息暴露，并为后续接入 SSO、审计追踪和权限收敛预留扩展空间。',
+        },
+      }
+
+      function render(mode) {
+        document.querySelectorAll('[data-old]').forEach((node) => {
+          node.textContent = samples[mode].old
+        })
+        document.querySelectorAll('[data-new]').forEach((node) => {
+          node.textContent = samples[mode].next
+        })
+        document.querySelectorAll('.switch button').forEach((button) => {
+          button.classList.toggle('active', button.dataset.mode === mode)
+        })
+      }
+
+      document.querySelectorAll('.switch button').forEach((button) => {
+        button.addEventListener('click', () => render(button.dataset.mode))
+      })
+
+      render('short')
+    </script>
+  </body>
+</html>
