@@ -42,9 +42,9 @@
 | 加载文档 | 启动 / 刷新 | `GET /api/file` → `DocumentService.read(filePath)` → `fs.readFile` → `FileResponse` | — |
 | 加载批注 | 启动 | `GET /api/annotations` → `AnnotationsService.read(filePath)` → 读 sidecar JSON | — |
 | 创建批注(draft) | popover 点 [💬 批注] | client App 推一条 `Annotation` → `POST /api/annotations`(full list)→ sidecar 写 | sidecar |
-| AI 改写(draft → thinking → deciding) | card 内回车提交 | `POST /api/rewrite` → `RewriteService.rewrite(items, fullDoc)` → **过滤掉 decided 段**(防漂移)→ ClaudeCli adapter → `claude -p` → JSON 解析 → `RewriteResponse` → client 进 deciding 状态(modal 默认不弹) | — |
+| AI 改写(draft → discussed/thinking → discussed/deciding) | card 内回车提交 | `POST /api/rewrite` → `RewriteService.rewrite(items, fullDoc)` → **过滤掉 state=decided 的 annotation id**(防漂移)→ ClaudeCli adapter → `claude -p` → JSON 解析 → `RewriteResponse` → client 进 deciding 状态(modal 默认不弹) | — |
 | 看 diff(deciding) | mark / card 点击 [查看 →] | client 弹 modal,展示 instruction + diff + delta + reprompt 框 | — |
-| 接受(deciding → decided 或 → applied)| modal 内 [↵ 接受] / [⌘↵ 接受+拍板] | client 算 newContent(splice 在 anchor.srcStart..srcEnd)→ `POST /api/save` → `DocumentService.write` → 同步更新 annotation.status=applied(或 + state=decided 二选一) → sidecar 写 | .md + sidecar |
+| 接受(deciding → applied) | modal 内 [↵ 接受] / [⌘↵ 接受+拍板] | client 通过 sentence span 的 `data-src-start/end` 解析源码范围 → splice → 重新渲染并重建其余 open annotations 的 anchor → `POST /api/save` → `DocumentService.write` → 同步更新 annotation.status=applied; `[⌘↵]` 额外把 annotation.state 置为 `decided` → sidecar 写 | .md + sidecar |
 | 拍板(任意 → decided) | card 上 [拍板] / popover [拍板] / `⌘↵` | client 改 annotation.state='decided' → `POST /api/annotations` 写 sidecar | sidecar |
 
 ### 1.3 设计模式
@@ -53,12 +53,12 @@
 |------|------|------|
 | **Adapter** | `ClaudeCli` 包装 `claude -p` 子进程,实现接口 `runAgent(prompt) → string`。v0.3 加 cursor / aider 时同接口加同级 adapter | agent-中立护城河预备(v0.3 不重构) |
 | **Service / Route 分层** | routes 只做参数校验 + HTTP I/O;services 含全部领域逻辑(状态转移、prompt 构造、anchor 匹配) | services 可纯单测(mock adapters) |
-| **State Machine on Annotation** | 4 态:`draft / thinking / deciding / decided`;转移规则封装在 services/annotations.ts 中 | 单测覆盖,不在 UI 层散落 |
+| **Annotation 双轴模型** | 持久化 `state` 只有 3 态:`draft / discussed / decided`; `thinking / deciding` 是 `discussed` 的 UI 子态,由 `ai_suggestion` 是否存在区分。终态由 `status=applied / dismissed` 表示 | 单测覆盖,不在 UI 层散落 |
 | **Optimistic UI** | client 立即更新本地 state(如点拍板段立即变绿),持久化 fetch 异步;失败 rollback + 提示 | 操作零延迟 |
 | **Single Source of Truth (types/)** | `Annotation`、`Anchor`、`Sidecar` 等类型在 types/ 共享,前后端 import 同一份 | schema 演进改一处全栈生效 |
 | **Component Decoupling** | Reader / Sidebar / DiffModal 不互相 import,只通过 App 传递 props | 单组件可单独迭代 / 测试 |
 
-### 1.4 状态机(annotation.state)
+### 1.4 状态机(state + status)
 
 ```
                   [创建批注]
@@ -67,21 +67,21 @@
                   ┌─ draft ─┐
        [拍板]    │           │   [输入指令 + ↵]
    ◀──────────────┤           ├──────────────▶
-                  │           │              thinking
+                  │           │          discussed(thinking)
                   │           │                │
    ┌── decided ───┘           │  [⌘↵ 接受+拍板]│ [AI 返回]
    │              [Esc 取消]  │              ◀──────┐
    │              ◀───────────┤                     │
    │              ┌─────────  └──◀────[↵ 接受]      ▼
-   │ [↵ 解锁]     │                              deciding
+   │ [↵ 解锁]     │                         discussed(deciding)
    ▼              ▼                                  │
-draft           applied(从 sidebar 隐藏)             │ [点 mark / card]
+draft      applied(status,从 sidebar 隐藏)           │ [点 mark / card]
                                                      ▼
                                                    modal
                                                    开/关
 ```
 
-防漂移规则:**`RewriteService.rewrite()` 入口过滤 `items` 中所有 anchor 落在 `state=decided` 的段范围内的请求项,直接 return error**(`{error: "selection overlaps decided segment"}`)。前端遇此响应需显式提示用户。
+防漂移规则:**`RewriteService.rewrite()` 入口过滤 `items` 中所有命中 `state=decided` annotation id 的请求项,直接 return error**(`all selected items are state=decided; cannot rewrite`)。接受改写后,前端会基于新旧渲染结果按 `anchor.text` 近邻匹配重建其余 open annotations 的 anchor,修复跨 splice 漂移。
 
 ---
 
@@ -112,7 +112,7 @@ draft           applied(从 sidebar 隐藏)             │ [点 mark / card]
 | `server/routes/annotations.ts` | skeleton | **不动** |
 | `server/routes/rewrite.ts` | skeleton | **不动** |
 | `server/services/document.ts` | skeleton(read/write) | **不动**(已实现) |
-| `server/services/annotations.ts` | skeleton(read/write) | **加状态机校验**:写入时拒绝非法状态转移(如 applied → draft) |
+| `server/services/annotations.ts` | skeleton(read/write) | **加状态机校验**:写入时拒绝非法 state 转移(如 decided → discussed) |
 | `server/services/rewrite.ts` | skeleton(prompt + parse) | **加防漂移过滤**:在 prompt 构造前剔除 state=decided 的 items |
 | `server/adapters/claude-cli.ts` | 已实现 | 不动 |
 
@@ -120,7 +120,7 @@ draft           applied(从 sidebar 隐藏)             │ [点 mark / card]
 
 | 文件 | 当前状态 | v0.1 改动 |
 |------|---------|---------|
-| `types/annotation.ts` | v2 schema 已定义 | **不动**(state 4 态 + AuditEntry + template_hint 等已就位) |
+| `types/annotation.ts` | v2 schema 已定义 | **收敛**到 sentence-level anchor + `state/status` 双轴模型 |
 | `types/api.ts` | 已定义 | **加** RewriteRequest 增加可选 `mode: 'standard' \| 'force'` 字段(供未来覆盖防漂移使用,v0.1 暂不开放) |
 | `types/document.ts` | 已定义 | 不动 |
 
