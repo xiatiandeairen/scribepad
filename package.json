@@ -12,9 +12,9 @@
   "scripts": {
     "dev": "concurrently -n vite,server -c blue,green \"npm:dev:client\" \"npm:dev:server\"",
     "dev:client": "vite",
-    "dev:server": "tsx watch --include types --include server server/index.ts sample.md",
+    "dev:server": "PORT=3001 tsx watch --include types --include server server/index.ts sample.md",
     "build": "vite build && tsc -p tsconfig.server.json",
-    "start": "node dist/server/index.js sample.md",
+    "start": "NODE_ENV=production node dist/server/index.js sample.md",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

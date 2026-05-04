@@ -1,10 +1,10 @@
 /**
  * services/rewrite — orchestrates AI rewrite of one or more selections.
  *
- * Foundation skeleton: builds prompt, dispatches to claude-cli adapter,
+ * Foundation skeleton: builds prompt, dispatches to the Codex CLI adapter,
  * parses JSON array response. v0.3 will swap adapter selection (multi-agent).
  */
-import { runClaudeCli } from '../adapters/claude-cli.js'
+import { runCodexCli } from '../adapters/codex-cli.js'
 import type { RewriteItem, RewriteResultEntry } from '../../types/api.js'
 import type { Annotation } from '../../types/annotation.js'
 
@@ -28,7 +28,7 @@ export async function rewriteItems(
   }
 
   const prompt = buildPrompt(fullDoc, filtered)
-  const raw = await runClaudeCli(prompt)
+  const raw = await runCodexCli(prompt)
   const results = parseRewriteJson(raw, filtered)
 
   // 被过滤项保持 rewritten = '' 占位,按原 items 顺序合并返回
@@ -64,7 +64,7 @@ function parseRewriteJson(raw: string, items: RewriteItem[]): RewriteResultEntry
   const start = text.indexOf('[')
   const end = text.lastIndexOf(']')
   if (start < 0 || end < 0) {
-    throw new Error('claude returned no JSON array: ' + raw.slice(0, 200))
+    throw new Error('codex returned no JSON array: ' + raw.slice(0, 200))
   }
   const arr = JSON.parse(text.slice(start, end + 1)) as RewriteResultEntry[]
   const map = new Map(arr.map((r) => [r.id, r.rewritten]))
