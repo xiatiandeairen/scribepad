@@ -4,7 +4,7 @@
  * Renders a card for each `status === 'open'` annotation. Cards expose four
  * visual variants tied to the v0.2 state machine (see docs/plan.md §1.4):
  *
- *   draft               → autosizing textarea + ↵ submit
+ *   draft               → autosizing textarea + floating confirm/cancel actions
  *   discussed (no AI)   → one-line "codex thinking"
  *   discussed (with AI) → one-line "AI returned"; click card opens DiffModal
  *   decided             → 🔒 locked, AI skip
@@ -75,6 +75,7 @@ function AnnotationCard(props: CardProps): JSX.Element {
 
   // Card-level class: base, variant tint (deciding/decided), and active highlight.
   const classes = ['anno-card']
+  if (variant === 'draft') classes.push('draft')
   if (variant === 'deciding') classes.push('deciding')
   if (variant === 'decided') classes.push('decided')
   if (props.isActive) classes.push('active')
@@ -98,13 +99,15 @@ function AnnotationCard(props: CardProps): JSX.Element {
         }
       }}
     >
-      <div className="head">
-        <div className="text">{anno.anchor.text}</div>
-        {variant === 'thinking' && <span className="status-line thinking">codex 思考中…</span>}
-        {variant === 'deciding' && <span className="status-line deciding">AI 已返回</span>}
-        {variant === 'decided' && <span className="status-line">已锁定</span>}
-      </div>
-      {variant === 'draft' && <DraftRow anno={anno} onSubmit={props.onSubmitInstruction} />}
+      {variant === 'draft' ? (
+        <DraftRow anno={anno} onSubmit={props.onSubmitInstruction} onCancel={props.onDelete} />
+      ) : (
+        <div className="head">
+          {variant === 'thinking' && <span className="status-line thinking">codex 思考中…</span>}
+          {variant === 'deciding' && <span className="status-line deciding">AI 已返回</span>}
+          {variant === 'decided' && <span className="status-line">已锁定</span>}
+        </div>
+      )}
     </div>
   )
 }
@@ -112,6 +115,7 @@ function AnnotationCard(props: CardProps): JSX.Element {
 function DraftRow(props: {
   anno: Annotation
   onSubmit: (id: string, instruction: string) => void
+  onCancel: (id: string) => void
 }): JSX.Element {
   // Local draft text per card; persists across re-renders until parent
   // transitions the card out of draft.
@@ -139,7 +143,7 @@ function DraftRow(props: {
   }
 
   return (
-    <div className="row">
+    <div className="draft-row">
       <textarea
         ref={(el) => {
           textareaRef.current = el
@@ -154,9 +158,24 @@ function DraftRow(props: {
         }}
         onKeyDown={onKeyDown}
       />
-      <button type="button" className="primary" onClick={submit}>
-        ↵
-      </button>
+      <div className="draft-actions" aria-label="批注操作">
+        <button
+          type="button"
+          className="icon-action confirm"
+          aria-label="提交批注"
+          onClick={submit}
+        >
+          ✓
+        </button>
+        <button
+          type="button"
+          className="icon-action cancel"
+          aria-label="取消批注"
+          onClick={() => props.onCancel(props.anno.id)}
+        >
+          ×
+        </button>
+      </div>
     </div>
   )
 }

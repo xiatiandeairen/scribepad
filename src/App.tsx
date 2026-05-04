@@ -16,7 +16,7 @@
  *   1. load file/annotations on mount + reload button
  *   2. create draft from popover
  *   3. submit instruction → discussed (thinking) → rewrite → discussed (deciding)
- *   4. open DiffModal from mark click or sidebar 查看 button
+ *   4. open DiffModal from mark click or AI-returned sidebar card
  *   5. accept (apply rewrite to source + saveDocument)
  *   6. accept+lock (apply rewrite + state=decided)
  *   7. lock / unlock / delete from sidebar; cancel from modal reverts to draft
@@ -352,27 +352,15 @@ export function App(): JSX.Element {
     if (decidingModalFor) applyRewrite(decidingModalFor, false)
   }, [decidingModalFor, applyRewrite])
 
-  const handleAcceptAndLock = useCallback((): void => {
-    if (decidingModalFor) applyRewrite(decidingModalFor, true)
-  }, [decidingModalFor, applyRewrite])
-
-  // Cancel: drop the AI suggestion and roll the annotation back to draft so
-  // the user can either tweak the instruction or delete the card outright.
-  const handleCancel = useCallback((): void => {
-    const id = decidingModalFor
+  // Close only dismisses the modal. It does not change annotation state:
+  // AI-returned cards remain reopenable, and in-flight reprompts keep running.
+  const handleCloseModal = useCallback((): void => {
     setDecidingModalFor(null)
-    if (!id) return
-    const next = annotations.map((a) =>
-      a.id === id ? { ...a, ai_suggestion: null, state: 'draft' as const } : a,
-    )
-    setAnnotations(next)
-    persistAnnotations(next)
-  }, [annotations, decidingModalFor, persistAnnotations])
+  }, [])
 
   const handleReprompt = useCallback(
     (newInstruction: string): void => {
       const id = decidingModalFor
-      setDecidingModalFor(null)
       if (!id) return
       void handleSubmitInstruction(id, newInstruction)
     },
@@ -383,7 +371,10 @@ export function App(): JSX.Element {
   const decidingAnnotation = decidingModalFor
     ? (annotations.find((a) => a.id === decidingModalFor) ?? null)
     : null
-  const modalOpen = !!decidingAnnotation && !!decidingAnnotation.ai_suggestion
+  const modalOpen =
+    !!decidingAnnotation &&
+    decidingAnnotation.status === 'open' &&
+    decidingAnnotation.state === 'discussed'
 
   const visibleCount = annotations.filter((a) => a.status === 'open').length
   const decidedCount = annotations.filter(
@@ -469,8 +460,7 @@ export function App(): JSX.Element {
         isOpen={modalOpen}
         annotation={decidingAnnotation}
         onAccept={handleAccept}
-        onAcceptAndLock={handleAcceptAndLock}
-        onCancel={handleCancel}
+        onCancel={handleCloseModal}
         onReprompt={handleReprompt}
       />
 

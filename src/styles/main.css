@@ -396,6 +396,7 @@ mark.anno.decided::after {
 
 /* Card per state */
 .anno-card {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -412,6 +413,10 @@ mark.anno.decided::after {
   cursor: pointer;
 }
 
+.anno-card.draft {
+  margin-bottom: 16px;
+}
+
 .anno-card.decided {
   background: var(--card-decided-bg);
   border-color: var(--card-decided-border);
@@ -419,32 +424,17 @@ mark.anno.decided::after {
 
 .anno-card .head {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  margin-bottom: 6px;
-}
-
-.anno-card:not(:has(textarea)) .head {
   margin-bottom: 0;
 }
 
-.anno-card .text {
-  font-size: 13px;
-  line-height: 1.35;
-  color: var(--fg);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.anno-card .row {
+.anno-card .draft-row {
   display: flex;
-  gap: 6px;
   align-items: flex-start;
+  padding-right: 16px;
 }
 
 .anno-card .input,
@@ -469,6 +459,42 @@ mark.anno.decided::after {
 .anno-card textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
+  border-color: var(--accent);
+}
+
+.anno-card .draft-actions {
+  position: absolute;
+  right: -6px;
+  bottom: -10px;
+  display: flex;
+  gap: 4px;
+}
+
+.anno-card .icon-action {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+
+.anno-card .icon-action.confirm {
+  color: var(--accent);
+}
+
+.anno-card .icon-action.cancel {
+  color: var(--muted);
+}
+
+.anno-card .icon-action:hover {
   border-color: var(--accent);
 }
 
@@ -622,7 +648,7 @@ mark.anno.decided::after {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(20, 22, 26, 0.36);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -632,43 +658,38 @@ mark.anno.decided::after {
 
 .diff-modal {
   background: var(--surface);
-  border-radius: 14px;
+  border-radius: 9px;
   box-shadow: var(--shadow-lg);
-  max-width: 720px;
+  width: clamp(460px, 58vw, 700px);
+  max-width: calc(100vw - 32px);
+  max-height: min(78vh, 680px);
   margin: 0 auto;
   overflow: hidden;
   border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
 }
 
 .diff-modal-header {
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 14px 8px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
 .diff-modal-header .title {
-  font-size: 15px;
+  color: var(--fg);
+  font-size: 14px;
   font-weight: 600;
-  flex: 1;
-}
-
-.diff-modal-header .meta-tag {
-  font-size: 11px;
-  color: var(--muted);
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-family: ui-monospace, 'SF Mono', monospace;
 }
 
 .diff-modal-header .close-btn {
   background: transparent;
   border: none;
-  font-size: 16px;
+  font-size: 15px;
   color: var(--muted);
-  padding: 0 4px;
+  padding: 2px 4px;
   cursor: pointer;
 }
 
@@ -677,150 +698,159 @@ mark.anno.decided::after {
 }
 
 .diff-modal-body {
-  padding: 20px 24px;
+  padding: 8px 18px 14px;
+  overflow: hidden;
 }
 
 .modal-section {
-  margin-bottom: 16px;
-}
-
-.modal-section .label {
-  position: static;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  font-weight: 600;
-  margin-bottom: 6px;
-  background: none;
-  padding: 0;
-}
-
-.instruction-box {
-  background: var(--accent-soft);
-  color: var(--accent);
-  padding: 10px 14px;
-  border-radius: 6px;
-  font-size: 13px;
-  border-left: 3px solid var(--accent);
+  margin-bottom: 10px;
 }
 
 .diff-block {
-  font-family: ui-monospace, 'SF Mono', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
 }
 
 .diff-block .row-del,
 .diff-block .row-add {
-  padding: 8px 12px;
   white-space: pre-wrap;
   word-break: break-word;
-  border: none;
 }
 
 .diff-block .row-del {
-  background: var(--diff-del-bg);
+  padding: 0 2px;
   color: var(--muted);
-  text-decoration: line-through;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .diff-block .row-add {
+  padding: 12px;
   background: var(--diff-add-bg);
-  border-top: 1px solid var(--border);
+  border: 1px solid #aceebb;
+  border-radius: 8px;
+  color: var(--fg);
+  width: 100%;
+  min-height: 72px;
+  max-height: min(46vh, 360px);
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.62;
 }
 
-.diff-block .row-prefix {
-  display: inline-block;
-  width: 16px;
-  font-weight: 700;
-  opacity: 0.5;
-}
-
-.delta-stats {
-  display: flex;
-  gap: 12px;
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 6px;
-}
-
-.delta-stats .stat {
-  font-family: ui-monospace, 'SF Mono', monospace;
-}
-
-.delta-stats .stat.shrink {
-  color: #2d7d3a;
-}
-
-.delta-stats .stat.grow {
-  color: #c47100;
-}
-
-.reprompt {
-  background: var(--hover);
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
+.diff-block .row-add.analyzing {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.reprompt-prefix {
-  font-size: 12px;
+  justify-content: center;
   color: var(--muted);
-  flex-shrink: 0;
 }
 
-.reprompt input {
-  flex: 1;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--fg);
+.analysis-status {
   font-size: 13px;
 }
 
-.reprompt input:focus {
+.diff-modal.compact {
+  width: clamp(420px, 44vw, 540px);
+}
+
+.diff-modal.compact .diff-block .row-add {
+  min-height: 56px;
+  max-height: 160px;
+}
+
+.diff-modal.long {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.diff-modal.long .diff-block .row-add {
+  min-height: 180px;
+  max-height: min(50vh, 400px);
+}
+
+.reprompt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reprompt-section {
+  margin-bottom: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.reprompt textarea {
+  flex: 1;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 18px;
+  resize: none;
+  font-family: inherit;
+}
+
+.reprompt textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   border-color: var(--accent);
 }
 
 .reprompt button {
-  padding: 5px 10px;
-  font-size: 12px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
-.diff-modal-footer {
-  padding: 14px 24px;
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
-  align-items: center;
-  border-top: 1px solid var(--border);
-  background: var(--bg);
-}
-
-.footer-meta {
-  font-size: 11px;
-  color: var(--muted);
+.reprompt .kbd {
+  margin-left: 6px;
+  color: currentColor;
   font-family: ui-monospace, 'SF Mono', monospace;
-}
-
-.footer-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.footer-actions .kbd {
   font-size: 10px;
-  color: var(--muted);
-  margin-right: 4px;
-  font-family: ui-monospace, 'SF Mono', monospace;
+  opacity: 0.68;
+}
+
+.reprompt button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+[data-theme='dark'] .diff-block .row-del {
+  background: transparent;
+}
+
+[data-theme='dark'] .diff-block .row-add {
+  background: #12351f;
+  border-color: #238636;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .diff-block .row-del {
+    background: transparent;
+  }
+
+  :root:not([data-theme='light']) .diff-block .row-add {
+    background: #12351f;
+    border-color: #238636;
+  }
+}
+
+@media (max-width: 720px) {
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .reprompt {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }

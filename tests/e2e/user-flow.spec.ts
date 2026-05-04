@@ -148,7 +148,7 @@ test('FLOW 2 · 输入指令让 AI 改写并点击接受', async ({ page }) => {
   await expect(page.locator('.anno-card')).toHaveCount(1)
 
   // step 2: 鼠标点击卡片输入框
-  const input = page.locator('.anno-card input[type="text"]')
+  const input = page.locator('.anno-card textarea')
   await input.click()
   await expect(input).toBeFocused()
 
@@ -170,7 +170,7 @@ test('FLOW 2 · 输入指令让 AI 改写并点击接受', async ({ page }) => {
   await expect(modal).toContainText('改写') // 新版含 [改写] 后缀
 
   // step 7: 鼠标点 [接受] 按钮(footer 第二个 primary)
-  await page.locator('.diff-modal-footer button.primary').first().click()
+  await page.locator('.reprompt button.primary', { hasText: '接受' }).first().click()
 
   // step 8: 验证副作用
   await expect(modal).not.toBeVisible()
@@ -180,17 +180,17 @@ test('FLOW 2 · 输入指令让 AI 改写并点击接受', async ({ page }) => {
 })
 
 // ─────────────────────────────────────────────────────────────────────
-// FLOW 3 — Esc 取消 modal,annotation 回到 draft
+// FLOW 3 — Esc 关闭 modal,annotation 保持 AI 已返回
 // ─────────────────────────────────────────────────────────────────────
-test('FLOW 3 · Esc 取消 modal 回到 draft', async ({ page }) => {
+test('FLOW 3 · Esc 关闭 modal 后仍可重开结果', async ({ page }) => {
   await mockRewrite(page)
   await page.goto('/')
   await waitReaderReady(page)
 
   await dragSelect(page, 'session token')
   await page.locator('.popover').click()
-  await page.locator('.anno-card input').fill('改紧凑')
-  await page.locator('.anno-card input').press('Enter')
+  await page.locator('.anno-card textarea').fill('改紧凑')
+  await page.locator('.anno-card textarea').press('Enter')
   await expect(page.locator('.anno-card')).toContainText('AI 已返回')
   await page.locator('mark.anno').click()
   await expect(page.locator('.diff-modal')).toBeVisible()
@@ -199,28 +199,29 @@ test('FLOW 3 · Esc 取消 modal 回到 draft', async ({ page }) => {
   await page.keyboard.press('Escape')
   await expect(page.locator('.diff-modal')).not.toBeVisible()
 
-  // mark 回到 draft 黄色(选 .draft class)
-  await expect(page.locator('mark.anno.draft')).toHaveCount(1)
-  // input 框回来(card 回 draft 形态)
-  await expect(page.locator('.anno-card input[type="text"]')).toBeVisible()
+  await expect(page.locator('mark.anno.deciding')).toHaveCount(1)
+  await expect(page.locator('.anno-card.deciding')).toContainText('AI 已返回')
+
+  await page.locator('.anno-card.deciding').click()
+  await expect(page.locator('.diff-modal')).toBeVisible()
 })
 
 // ─────────────────────────────────────────────────────────────────────
-// FLOW 4 — Cmd+Enter 接受 + 拍板,文档变更 + 此段进入 decided 永久状态
+// FLOW 4 — Cmd+Enter 接受,文档变更,但不拍板
 // ─────────────────────────────────────────────────────────────────────
-test('FLOW 4 · Cmd+Enter 接受+拍板', async ({ page }) => {
+test('FLOW 4 · Cmd+Enter 接受但不拍板', async ({ page }) => {
   await mockRewrite(page)
   await page.goto('/')
   await waitReaderReady(page)
 
   await dragSelect(page, '会话可即时撤销')
   await page.locator('.popover').click()
-  await page.locator('.anno-card input').fill('改简短')
-  await page.locator('.anno-card input').press('Enter')
+  await page.locator('.anno-card textarea').fill('改简短')
+  await page.locator('.anno-card textarea').press('Enter')
   await expect(page.locator('.anno-card')).toContainText('AI 已返回', { timeout: 5000 })
 
-  // 点 [查看 →] 按钮(card 上)
-  await page.locator('.anno-card button:has-text("查看")').click()
+  // 点 AI 已返回卡片
+  await page.locator('.anno-card.deciding').click()
   await expect(page.locator('.diff-modal')).toBeVisible()
 
   // Cmd+Enter(macOS)/ Ctrl+Enter
@@ -230,7 +231,7 @@ test('FLOW 4 · Cmd+Enter 接受+拍板', async ({ page }) => {
   await expect(page.locator('.diff-modal')).not.toBeVisible()
   // 文档变了
   await expect(page.locator('.reader')).toContainText('会话可即时撤销 [改写]')
-  // applied 后 anno 卡片不显示(state=decided + status=applied → status filter 触发)
+  // applied 后 anno 卡片不显示；拍板不在这个 popup 内完成。
   // 这里只验证 modal 已关 + 文档变更
 })
 
@@ -317,15 +318,15 @@ test('FLOW 8 · Reprompt 再写一次', async ({ page }) => {
 
   await dragSelect(page, 'session token')
   await page.locator('.popover').click()
-  await page.locator('.anno-card input').fill('改紧凑')
-  await page.locator('.anno-card input').press('Enter')
+  await page.locator('.anno-card textarea').fill('改紧凑')
+  await page.locator('.anno-card textarea').press('Enter')
   await expect(page.locator('.anno-card')).toContainText('AI 已返回', { timeout: 5000 })
 
   await page.locator('mark.anno').click()
   await expect(page.locator('.diff-modal')).toBeVisible()
 
   // Reprompt input
-  const repromptInput = page.locator('.reprompt input[type="text"]')
+  const repromptInput = page.locator('.reprompt textarea')
   await expect(repromptInput).toBeVisible()
   await repromptInput.click()
   await repromptInput.fill('压缩到 10 字以内')
@@ -353,8 +354,8 @@ test('FLOW 9 · AI 错误时 toast 显示', async ({ page }) => {
 
   await dragSelect(page, 'session token')
   await page.locator('.popover').click()
-  await page.locator('.anno-card input').fill('改')
-  await page.locator('.anno-card input').press('Enter')
+  await page.locator('.anno-card textarea').fill('改')
+  await page.locator('.anno-card textarea').press('Enter')
 
   // toast 出现
   const toast = page.locator('.toast, [role="alert"], [class*="toast"]').first()
@@ -362,7 +363,7 @@ test('FLOW 9 · AI 错误时 toast 显示', async ({ page }) => {
   await expect(toast).toContainText('dummy error')
 
   // 状态回到 draft(input 可见)
-  await expect(page.locator('.anno-card input[type="text"]')).toBeVisible()
+  await expect(page.locator('.anno-card textarea')).toBeVisible()
 })
 
 // ─────────────────────────────────────────────────────────────────────

@@ -121,7 +121,8 @@ test.describe('P0 product flows', () => {
     await waitForReaderReady(page)
 
     await expect(page.locator('mark.anno.draft')).toHaveText(selected)
-    await expect(page.locator('.anno-card .head .text')).toContainText(selected)
+    await expect(page.locator('.anno-card')).not.toContainText(selected)
+    await expect(page.locator('.anno-card textarea[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
     await expect(page.locator('.app-header .badge')).toHaveText('1 批注 · 0 已定')
   })
 
@@ -134,12 +135,14 @@ test.describe('P0 product flows', () => {
     await submitInstruction(page, '改得更明确')
 
     await expect(page.locator('.anno-card')).toContainText('思考中')
+    await expect(page.locator('.anno-card')).not.toContainText(selected)
     await expect(page.locator('.anno-card.deciding')).toContainText('AI 已返回')
+    await expect(page.locator('.anno-card.deciding')).not.toContainText(selected)
 
     await page.locator('.anno-card.deciding').click()
     const modal = page.locator('.diff-modal')
     await expect(modal).toBeVisible()
-    await expect(modal).toContainText('改得更明确')
+    await expect(modal.locator('.instruction-box')).toHaveCount(0)
     await expect(modal.locator('.row-del')).toContainText(selected)
     await expect(modal.locator('.row-add')).toContainText(`${selected} [改写]`)
 
@@ -151,7 +154,7 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('.anno-card')).toHaveCount(0)
   })
 
-  test('P0.4 取消 diff 不写回文档，批注回到 draft 可继续编辑', async ({ page }) => {
+  test('P0.4 关闭 diff 不写回文档，批注仍保持 AI 已返回可重开', async ({ page }) => {
     await mockRewrite(page)
     await page.goto('/')
     await waitForReaderReady(page)
@@ -166,8 +169,11 @@ test.describe('P0 product flows', () => {
 
     await expect(page.locator('.diff-modal')).not.toBeVisible()
     await expect(page.locator('.reader')).not.toContainText(`${selected} [改写]`)
-    await expect(page.locator('mark.anno.draft')).toHaveText(selected)
-    await expect(page.locator('.anno-card textarea[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
+    await expect(page.locator('mark.anno.deciding')).toHaveText(selected)
+    await expect(page.locator('.anno-card.deciding')).toContainText('AI 已返回')
+
+    await page.locator('.anno-card.deciding').click()
+    await expect(page.locator('.diff-modal .row-add')).toContainText(`${selected} [改写]`)
   })
 
   test('P0.5 open 批注可被拍板为 decided，刷新后仍保持锁定', async ({ page }) => {
@@ -262,22 +268,23 @@ test.describe('P0 product flows', () => {
       substring: '成熟身份提供商',
     })
 
-    const secondCard = page.locator('.anno-card', { hasText: second }).first()
+    const secondCard = page.locator('.anno-card').nth(1)
     await secondCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').fill('改第二处')
     await secondCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').press('Enter')
     await expect(secondCard).toContainText('AI 已返回')
 
-    const firstCard = page.locator('.anno-card', { hasText: first }).first()
+    const firstCard = page.locator('.anno-card').first()
     await firstCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').fill('改第一处')
     await firstCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').press('Enter')
-    await expect(firstCard).toContainText('AI 已返回')
-    await firstCard.click()
+    await expect(page.locator('.anno-card.deciding')).toHaveCount(2)
+    await page.locator('.anno-card.deciding').first().click()
     await page.locator('.diff-modal button.primary', { hasText: '接受' }).first().click()
 
     await expect(page.locator('.reader')).toContainText(`${first} [改写]`)
-    await expect(page.locator('.anno-card', { hasText: second })).toBeVisible()
+    await expect(page.locator('.anno-card.deciding')).toHaveCount(1)
+    await expect(page.locator('.anno-card.deciding')).not.toContainText(second)
 
-    await secondCard.click()
+    await page.locator('.anno-card.deciding').click()
 
     await expect(page.locator('.diff-modal .row-add')).toContainText(`${second} [改写]`)
   })

@@ -8,13 +8,30 @@
  *   draft --[submit instruction]--> discussed (thinking)
  *         --[mock /api/rewrite returns]--> discussed (deciding, ai_suggestion set)
  *         --[click card]--> modal open
- *         --[click ↵ 接受]--> applied (status=applied, mark removed, content updated)
+ *         --[click 接受]--> applied (status=applied, mark removed, content updated)
  *
  * /api/rewrite is mocked deterministically (no real CLI agent calls). The mock
  * appends ' [改写]' to the selection so we can grep for it in the document.
  */
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page, type Route } from '@playwright/test'
 import { clearSidecar, createAnnotation, mockRewrite, waitForReaderReady } from './helpers'
+
+async function mockRewriteDelayed(page: Page, delayMs = 350): Promise<void> {
+  await page.route('**/api/rewrite', async (route: Route) => {
+    const req = route.request()
+    const body = req.postDataJSON() as { items: { id: string; selection: string }[] }
+    const results = (body.items ?? []).map((it) => ({
+      id: it.id,
+      rewritten: `${it.selection} [${body.items.length}-${Date.now()}]`,
+    }))
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs))
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results }),
+    })
+  })
+}
 
 test.describe('rewrite flow', () => {
   test.beforeEach(async ({ page }) => {
@@ -44,9 +61,8 @@ test.describe('rewrite flow', () => {
     await deciding.click()
     const modal = page.locator('.diff-modal')
     await expect(modal).toBeVisible()
-    // The modal should show the user's instruction and the AI rewrite line
-    // (selection + ' [改写]' from the mock).
-    await expect(modal.locator('.instruction-box')).toContainText('改得更专业一些')
+    // The modal focuses on the AI rewrite line (selection + ' [改写]' from the mock).
+    await expect(modal.locator('.instruction-box')).toHaveCount(0)
     await expect(modal.locator('.row-add')).toContainText(selected + ' [改写]')
 
     // Accept.
@@ -70,29 +86,65 @@ test.describe('rewrite flow', () => {
       substring: '成熟身份提供商',
     })
 
-    const secondCard = page.locator('.anno-card', { hasText: secondSelected }).first()
+    const secondCard = page.locator('.anno-card').nth(1)
     await secondCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').fill('再压缩一点')
     await secondCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').press('Enter')
-    await expect(
-      page.locator('.anno-card.deciding', { hasText: secondSelected }).first(),
-    ).toBeVisible()
+    await expect(secondCard).toContainText('AI 已返回')
+    await expect(secondCard).not.toContainText(secondSelected)
 
-    const firstCard = page.locator('.anno-card', { hasText: firstSelected }).first()
+    const firstCard = page.locator('.anno-card').first()
     await firstCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').fill('改得更专业一些')
     await firstCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').press('Enter')
 
-    const firstDeciding = page.locator('.anno-card.deciding', { hasText: firstSelected }).first()
-    await expect(firstDeciding).toBeVisible()
-    await firstDeciding.click()
+    await expect(page.locator('.anno-card.deciding')).toHaveCount(2)
+    await expect(page.locator('.anno-card.deciding').first()).not.toContainText(firstSelected)
+    await page.locator('.anno-card.deciding').first().click()
     await page.locator('.diff-modal button.primary', { hasText: '接受' }).first().click()
 
     await expect(page.locator('.reader')).toContainText(firstSelected + ' [改写]')
 
-    const survivingCard = page.locator('.anno-card.deciding', { hasText: secondSelected }).first()
-    await expect(survivingCard).toBeVisible()
+    await expect(page.locator('.anno-card.deciding')).toHaveCount(1)
+    const survivingCard = page.locator('.anno-card.deciding').first()
+    await expect(survivingCard).not.toContainText(secondSelected)
     await expect(page.locator('mark.anno.deciding')).toHaveCount(1)
 
     await survivingCard.click()
     await expect(page.locator('.diff-modal .row-add')).toContainText(secondSelected + ' [改写]')
+  })
+
+  test('reprompt stays in modal, syncs sidebar thinking, and can reopen after close', async ({
+    page,
+  }) => {
+    await page.unroute('**/api/rewrite')
+    await mockRewriteDelayed(page)
+    await page.goto('/')
+    await waitForReaderReady(page)
+
+    await createAnnotation(page, { substring: 'session token' })
+    const card = page.locator('.anno-card').first()
+    await card.locator('textarea[placeholder="告诉 AI 怎么改…"]').fill('先改一次')
+    await card.locator('textarea[placeholder="告诉 AI 怎么改…"]').press('Enter')
+
+    await expect(page.locator('.anno-card.deciding')).toBeVisible()
+    await page.locator('.anno-card.deciding').click()
+    const modal = page.locator('.diff-modal')
+    await expect(modal).toBeVisible()
+
+    const reprompt = modal.locator('.reprompt textarea')
+    await reprompt.fill('再改一次')
+    await reprompt.press('Enter')
+
+    await expect(modal).toBeVisible()
+    await expect(modal.locator('.row-add')).toContainText('正在分析中')
+    await expect(page.locator('.anno-card')).toContainText('思考中')
+
+    await page.locator('.diff-modal-header .close-btn').click()
+    await expect(modal).toHaveCount(0)
+    await expect(page.locator('.anno-card')).toContainText('思考中')
+
+    await expect(page.locator('.anno-card.deciding')).toBeVisible()
+    await page.locator('.anno-card.deciding').click()
+    await expect(modal).toBeVisible()
+    await expect(modal.locator('.row-add')).not.toContainText('正在分析中')
   })
 })

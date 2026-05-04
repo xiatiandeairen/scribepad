@@ -318,7 +318,7 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await expect(card.locator('input[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
+      await expect(card.locator('textarea[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
       await expect(card.locator('button.primary', { hasText: '↵' })).toBeVisible()
     })
 
@@ -353,8 +353,8 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
 
       // Mark visually transitions to thinking (still yellow + ⏳ via CSS).
       await expect(page.locator('mark.anno.thinking')).toBeVisible()
@@ -366,8 +366,8 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       await expect(card.locator('.status-line.thinking')).toBeVisible()
       await expect(card.locator('.status-line.thinking')).toContainText('思考中')
     })
@@ -377,8 +377,8 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       await expect(page.locator('mark.anno.deciding')).toBeVisible()
       const afterContent = await page
         .locator('mark.anno.deciding')
@@ -386,17 +386,17 @@ test.describe('comprehensive v0.1', () => {
       expect(afterContent.replace(/['"]/g, '')).toContain('✏')
     })
 
-    test('4.4 card shows "AI 已返回" + 查看 button after AI returns', async ({ page }) => {
+    test('4.4 card shows only "AI 已返回" after AI returns', async ({ page }) => {
       await page.goto('/')
       await waitForReader(page)
       await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       const deciding = page.locator('.anno-card.deciding')
       await expect(deciding).toBeVisible()
       await expect(deciding).toContainText('AI 已返回')
-      await expect(deciding.locator('button.primary', { hasText: '查看' })).toBeVisible()
+      await expect(deciding).toHaveText('AI 已返回')
     })
 
     test('4.5 modal does NOT auto-open after AI returns', async ({ page }) => {
@@ -404,8 +404,8 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       // Wait for deciding state to settle.
       await expect(page.locator('.anno-card.deciding')).toBeVisible()
       await expect(page.locator('.diff-modal')).toHaveCount(0)
@@ -416,23 +416,23 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       await expect(page.locator('mark.anno.deciding')).toBeVisible()
       await page.locator('mark.anno.deciding').click()
       await expect(page.locator('.diff-modal')).toBeVisible()
     })
 
-    test('4.7 click [查看 →] in card opens modal', async ({ page }) => {
+    test('4.7 click deciding card opens modal', async ({ page }) => {
       await page.goto('/')
       await waitForReader(page)
       await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       const deciding = page.locator('.anno-card.deciding')
       await expect(deciding).toBeVisible()
-      await deciding.locator('button.primary', { hasText: '查看' }).click()
+      await deciding.click()
       await expect(page.locator('.diff-modal')).toBeVisible()
     })
 
@@ -441,13 +441,13 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       const selected = await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       await expect(page.locator('.anno-card.deciding')).toBeVisible()
-      await page.locator('.anno-card.deciding button.primary', { hasText: '查看' }).click()
+      await page.locator('.anno-card.deciding').click()
       const modal = page.locator('.diff-modal')
       await expect(modal).toBeVisible()
-      await expect(modal.locator('.instruction-box')).toContainText('改一下')
+      await expect(modal.locator('.instruction-box')).toHaveCount(0)
       await expect(modal.locator('.row-del')).toContainText(selected)
       await expect(modal.locator('.row-add')).toContainText('改写: ' + selected)
     })
@@ -462,10 +462,10 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       const sel = await createDraft(page, substring)
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       await expect(page.locator('.anno-card.deciding')).toBeVisible()
-      await page.locator('.anno-card.deciding button.primary', { hasText: '查看' }).click()
+      await page.locator('.anno-card.deciding').click()
       await expect(page.locator('.diff-modal')).toBeVisible()
       return sel
     }
@@ -473,8 +473,8 @@ test.describe('comprehensive v0.1', () => {
     test('5.1 modal renders header structure', async ({ page }) => {
       await openModal(page)
       const modal = page.locator('.diff-modal')
-      await expect(modal.locator('.diff-modal-header .title')).toContainText('AI 改写预览')
-      await expect(modal.locator('.diff-modal-header .meta-tag').first()).toContainText('codex')
+      await expect(modal.locator('.diff-modal-header .title')).toContainText('改写建议')
+      await expect(modal.locator('.diff-modal-header .meta-tag')).toHaveCount(0)
       await expect(modal.locator('.diff-modal-header .close-btn')).toBeVisible()
     })
 
@@ -483,25 +483,20 @@ test.describe('comprehensive v0.1', () => {
       const modal = page.locator('.diff-modal')
       await expect(modal.locator('.row-del')).toBeVisible()
       await expect(modal.locator('.row-add')).toBeVisible()
-      await expect(modal.locator('.delta-stats')).toBeVisible()
+      await expect(modal.locator('.delta-stats')).toHaveCount(0)
       await expect(modal.locator('.reprompt')).toBeVisible()
-      await expect(modal.locator('.diff-modal-footer')).toBeVisible()
-      // Three footer actions: 取消 / 接受 / 接受 + 拍板
-      await expect(modal.locator('.footer-actions button', { hasText: '取消' })).toBeVisible()
-      await expect(
-        modal.locator('.footer-actions button.primary', { hasText: '接受' }).first(),
-      ).toBeVisible()
-      await expect(
-        modal.locator('.footer-actions button.primary', { hasText: '接受 + 拍板' }),
-      ).toBeVisible()
+      await expect(modal.locator('.diff-modal-footer')).toHaveCount(0)
+      await expect(modal.locator('.reprompt button', { hasText: '提交' })).toBeVisible()
+      await expect(modal.locator('.reprompt button.primary', { hasText: '接受' })).toBeVisible()
+      await expect(modal.locator('button', { hasText: '拍板' })).toHaveCount(0)
     })
 
-    test('5.3 Esc dismisses modal and reverts mark to draft', async ({ page }) => {
+    test('5.3 Esc dismisses modal and keeps AI result reopenable', async ({ page }) => {
       await openModal(page)
       await page.keyboard.press('Escape')
       await expect(page.locator('.diff-modal')).toHaveCount(0)
-      // After cancel: state reverts to draft, mark is yellow (draft).
-      await expect(page.locator('mark.anno.draft')).toBeVisible()
+      await expect(page.locator('mark.anno.deciding')).toBeVisible()
+      await expect(page.locator('.anno-card.deciding')).toContainText('AI 已返回')
     })
 
     test('5.4 Enter accepts (content updated, mark gone, card gone)', async ({ page }) => {
@@ -513,12 +508,11 @@ test.describe('comprehensive v0.1', () => {
       await expect(page.locator('.reader')).toContainText('改写: ' + sel)
     })
 
-    test('5.5 Cmd+Enter accepts + locks (state=decided)', async ({ page }) => {
-      await openModal(page)
-      // Use Meta+Enter (Mac) — Playwright translates ControlOrMeta on Linux too.
+    test('5.5 Cmd+Enter accepts without locking', async ({ page }) => {
+      const sel = await openModal(page)
       await page.keyboard.press('Meta+Enter')
       await expect(page.locator('.diff-modal')).toHaveCount(0)
-      // Wait for fire-and-forget sidecar write to settle.
+      await expect(page.locator('.reader')).toContainText('改写: ' + sel)
       await expect
         .poll(
           () => {
@@ -530,7 +524,7 @@ test.describe('comprehensive v0.1', () => {
           },
           { timeout: 3000 },
         )
-        .toMatchObject({ state: 'decided', status: 'applied' })
+        .toMatchObject({ state: 'discussed', status: 'applied' })
     })
 
     test('5.6 click backdrop dismisses modal', async ({ page }) => {
@@ -540,40 +534,27 @@ test.describe('comprehensive v0.1', () => {
       await expect(page.locator('.diff-modal')).toHaveCount(0)
     })
 
-    test('5.7 click [取消] dismisses modal', async ({ page }) => {
+    test('5.7 click close dismisses modal', async ({ page }) => {
       await openModal(page)
-      await page.locator('.footer-actions button', { hasText: '取消' }).click()
+      await page.locator('.diff-modal-header .close-btn').click()
       await expect(page.locator('.diff-modal')).toHaveCount(0)
     })
 
     test('5.8 click [接受] accepts', async ({ page }) => {
       const sel = await openModal(page)
-      await page.locator('.footer-actions button.primary', { hasText: '接受' }).first().click()
+      await page.locator('.reprompt button.primary', { hasText: '接受' }).first().click()
       await expect(page.locator('.diff-modal')).toHaveCount(0)
       await expect(page.locator('.reader')).toContainText('改写: ' + sel)
     })
 
-    test('5.9 click [接受 + 拍板] accepts + locks', async ({ page }) => {
+    test('5.9 no accept-and-lock action in modal', async ({ page }) => {
       await openModal(page)
-      await page.locator('.footer-actions button.primary', { hasText: '接受 + 拍板' }).click()
-      await expect(page.locator('.diff-modal')).toHaveCount(0)
-      await expect
-        .poll(
-          () => {
-            if (!existsSync(SIDECAR_PATH)) return null
-            const sc = JSON.parse(readFileSync(SIDECAR_PATH, 'utf8')) as {
-              annotations: Array<{ state: string }>
-            }
-            return sc.annotations[0]?.state ?? null
-          },
-          { timeout: 3000 },
-        )
-        .toBe('decided')
+      await expect(page.locator('button', { hasText: '拍板' })).toHaveCount(0)
     })
 
     test('5.10 reprompt + Enter does NOT accept (intercepted)', async ({ page }) => {
       const sel = await openModal(page)
-      const repInput = page.locator('.reprompt input')
+      const repInput = page.locator('.reprompt textarea')
       await repInput.fill('再压缩一些')
       await repInput.press('Enter')
       // After reprompt, modal closes (since AI returns again immediately) but
@@ -585,11 +566,11 @@ test.describe('comprehensive v0.1', () => {
       await expect(page.locator('.reader')).not.toContainText('改写: ' + sel)
     })
 
-    test('5.11 reprompt + click [↻ 再写] reruns AI', async ({ page }) => {
+    test('5.11 reprompt + click [提交] reruns AI', async ({ page }) => {
       await openModal(page)
-      const repInput = page.locator('.reprompt input')
+      const repInput = page.locator('.reprompt textarea')
       await repInput.fill('换种说法')
-      await page.locator('.reprompt button', { hasText: '再写' }).click()
+      await page.locator('.reprompt button', { hasText: '提交' }).click()
       // Modal closes (handleReprompt clears the modal target), then deciding
       // card reappears after AI re-returns.
       await expect(page.locator('.anno-card.deciding')).toBeVisible()
@@ -605,12 +586,12 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       const sel = await createDraft(page, substring)
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       await expect(page.locator('.anno-card.deciding')).toBeVisible()
-      await page.locator('.anno-card.deciding button.primary', { hasText: '查看' }).click()
+      await page.locator('.anno-card.deciding').click()
       await expect(page.locator('.diff-modal')).toBeVisible()
-      await page.locator('.footer-actions button.primary', { hasText: '接受' }).first().click()
+      await page.locator('.reprompt button.primary', { hasText: '接受' }).first().click()
       await expect(page.locator('.diff-modal')).toHaveCount(0)
       return sel
     }
@@ -701,8 +682,8 @@ test.describe('comprehensive v0.1', () => {
       await waitForReader(page)
       await createDraft(page, '演示文档')
       const card = page.locator('.anno-card').first()
-      await card.locator('input').fill('改一下')
-      await card.locator('input').press('Enter')
+      await card.locator('textarea').fill('改一下')
+      await card.locator('textarea').press('Enter')
       await expect(page.locator('.toast')).toBeVisible()
       await expect(page.locator('.toast')).toContainText('cannot rewrite')
     })

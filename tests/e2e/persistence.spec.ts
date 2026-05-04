@@ -7,8 +7,8 @@
  * `.sample.md.annotations.json`, and on a subsequent page load
  * `App.reload` calls `GET /api/annotations` to restore the list.
  *
- * Test ensures the same selected text re-appears as a draft card after
- * `page.reload()`, with the original anchor.text preserved.
+ * Test ensures the selected text re-appears as a draft mark after
+ * `page.reload()`, while the card stays focused on the instruction input.
  */
 import { test, expect } from '@playwright/test'
 import { clearSidecar, createAnnotation, waitForReaderReady } from './helpers'
@@ -22,7 +22,7 @@ test.describe('sidecar persistence', () => {
     await page.goto('/')
     await waitForReaderReady(page)
 
-    const selected = await createAnnotation(page, { substring: '演示文档' })
+    const selected = await createAnnotation(page, { substring: 'session token' })
 
     // Sanity: card visible pre-reload.
     await expect(page.locator('.anno-card')).toHaveCount(1)
@@ -31,9 +31,11 @@ test.describe('sidecar persistence', () => {
     await page.reload()
     await waitForReaderReady(page)
 
-    // Annotation card should re-appear with the same anchor text.
+    // Annotation card should re-appear without duplicating the selected text.
     const card = page.locator('.anno-card').first()
     await expect(card).toBeVisible()
-    await expect(card.locator('.head .text')).toContainText(selected)
+    await expect(card).not.toContainText(selected)
+    await expect(card.locator('textarea[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
+    await expect(page.locator('mark.anno.draft')).toHaveText(selected)
   })
 })
