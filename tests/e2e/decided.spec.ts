@@ -26,7 +26,7 @@ test.describe('decided flow + 防漂移', () => {
     await page.goto('/')
     await waitForReaderReady(page)
 
-    await createAnnotation(page, { substring: '演示文档' })
+    await createAnnotation(page, { substring: 'session token' })
 
     // Promote to decided via direct API write, then reload to refetch.
     await page.evaluate(async () => {
@@ -39,7 +39,8 @@ test.describe('decided flow + 防漂移', () => {
         body: JSON.stringify({ annotations: next }),
       })
     })
-    await page.locator('button[aria-label="重新加载"]').click()
+    await page.reload()
+    await waitForReaderReady(page)
 
     const card = page.locator('.anno-card.decided')
     await expect(card).toBeVisible()
@@ -76,10 +77,10 @@ test.describe('decided flow + 防漂移', () => {
 
     await page.goto('/')
     await waitForReaderReady(page)
-    await createAnnotation(page, { substring: '演示文档' })
+    await createAnnotation(page, { substring: 'session token' })
 
     const card = page.locator('.anno-card').first()
-    const input = card.locator('input[placeholder="告诉 AI 怎么改…"]')
+    const input = card.locator('textarea[placeholder="告诉 AI 怎么改…"]')
     await input.fill('改一下')
     await input.press('Enter')
 
@@ -89,6 +90,6 @@ test.describe('decided flow + 防漂移', () => {
     await expect(toast).toContainText('cannot rewrite')
 
     // Annotation should have reverted to draft (input row is back).
-    await expect(card.locator('input[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
+    await expect(card.locator('textarea[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
   })
 })

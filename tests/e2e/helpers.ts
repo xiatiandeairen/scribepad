@@ -6,15 +6,15 @@
  *      from a known-empty state. The sidecar lives next to sample.md at the
  *      project root; we resolve it relative to this file.
  *   2. mockRewrite() — register a deterministic /api/rewrite handler that
- *      returns `<selection> [改写]` per item. Avoids real `claude -p` calls
+ *      returns `<selection> [改写]` per item. Avoids real CLI agent calls
  *      so tests run offline + fast.
  *   3. mockRewriteError() — register an error response for /api/rewrite (for
  *      防漂移 / failure-path tests).
  *   4. selectTextInReader() — programmatically select a contiguous text run
  *      inside `.reader` using the Range API. Returns the selected text so the
  *      caller can assert against the resulting annotation.
- *   5. createAnnotation() — high-level: select text + click the popover +
- *      wait for the resulting `.anno-card` to appear.
+ *   5. createAnnotation() — high-level: select text and wait for the
+ *      resulting `.anno-card` to appear.
  */
 import { type Page, type Route, expect } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
@@ -135,9 +135,10 @@ export async function selectTextInReader(
 }
 
 /**
- * Full create-annotation flow: wait for reader render, select text, click
- * popover, wait for the resulting `.anno-card` to be visible. Returns the
- * selected substring.
+ * Full create-annotation flow: wait for reader render, select text, release
+ * the pointer-equivalent path, then wait for the resulting `.anno-card` to
+ * be visible. Programmatic selection does not naturally fire pointerup, so
+ * this helper dispatches one to mirror the real user gesture.
  */
 export async function createAnnotation(
   page: Page,
@@ -145,8 +146,10 @@ export async function createAnnotation(
 ): Promise<string> {
   await expect(page.locator('.reader p').first()).toBeVisible()
   const selected = await selectTextInReader(page, opts)
-  await expect(page.locator('.popover')).toBeVisible()
-  await page.locator('.popover').click()
+  await page.locator('.reader').dispatchEvent('pointerup', {
+    pointerType: 'mouse',
+    bubbles: true,
+  })
   await expect(page.locator('.anno-card').first()).toBeVisible()
   return selected
 }
