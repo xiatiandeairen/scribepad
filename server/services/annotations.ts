@@ -9,10 +9,9 @@
  *   draft     — newly created; user hasn't issued AI rewrite yet
  *   discussed — AI rewrite in flight or returned, awaiting user decision
  *   decided   — locked to prevent AI drift; AI rewrite filtered server-side
- *   executed  — rewrite has been applied to the .md source
  *
- * Plan.md §1.4 uses transitional names "thinking"/"deciding" for the in-flight
- * AI loop; both collapse to `discussed` in the persistent schema.
+ * Plan.md 的 "thinking"/"deciding" 是 UI 展示态; 持久化仍统一折叠到
+ * `discussed`,再用 `ai_suggestion` 是否存在区分。
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -32,11 +31,9 @@ export function sidecarPath(docPath: string): string {
  *   decided   → draft       (user unlocks a previously-decided segment)
  *   discussed → draft       (user cancels mid-loop, e.g. Esc during loading)
  *   draft     → decided     (direct lock without AI rewrite — "拍板")
- *   decided   → executed    (applied to source; rewrite written to .md)
- *   discussed → executed    (⌘↵ accept+apply path)
  *
- * Rejected: executed → anything (terminal), and any other combo
- * (e.g. executed → draft, draft → executed without going through decided).
+ * "接受改写" 只会写 `status='applied'`; 不再引入额外的 executed 状态。
+ * 因此非法转移主要是锁定环之外的 state 跳变。
  */
 const LEGAL_TRANSITIONS: ReadonlySet<string> = new Set([
   'draft->discussed',
@@ -44,8 +41,6 @@ const LEGAL_TRANSITIONS: ReadonlySet<string> = new Set([
   'decided->draft',
   'discussed->draft',
   'draft->decided',
-  'decided->executed',
-  'discussed->executed',
 ])
 
 /**
@@ -91,6 +86,6 @@ export async function writeAnnotations(docPath: string, annotations: Annotation[
     }
   }
 
-  const data: Sidecar = { version: 2, annotations }
+  const data: Sidecar = { version: 3, annotations }
   await writeFile(sidecarPath(docPath), JSON.stringify(data, null, 2), 'utf8')
 }

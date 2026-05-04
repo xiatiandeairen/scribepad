@@ -1,16 +1,21 @@
 /**
- * Markdown renderer — mdast → HTML with source-offset annotations.
+ * Markdown renderer — mdast → HTML with block-id + sentence-level spans.
  *
- * Each non-leaf element carries `data-src-start` / `data-src-end` attributes
- * representing character offsets into the original markdown source. Text
- * nodes are wrapped in `<span data-src-start data-src-end>` so the anchor
- * algorithm (Task 5) can map DOM positions back to source offsets.
+ * Output structure (v0.2):
  *
- * v0.1 supports: heading, paragraph, list, listItem, code, inlineCode,
- * strong, emphasis, link, text. Unknown / unsupported nodes (e.g. image,
- * blockquote, table) degrade gracefully — Parent nodes recurse into
- * children, Literal nodes render their `value` as plain text, others emit
- * nothing.
+ *   - Each leaf block (paragraph / heading / code) carries
+ *     `data-block-id="b-{srcStart}"` derived from its mdast position.
+ *   - Inline content of a leaf block is split into sentence-sized chunks,
+ *     each wrapped in `<span data-sentence-idx="N">…</span>`.
+ *   - Code blocks are atomic: the whole `value` is sentence 0.
+ *   - listItem and list have no block-id of their own; their child blocks
+ *     (typically a paragraph) carry the id.
+ *
+ * Sentence boundaries are detected at top-level text nodes only — inline
+ * elements (strong / em / link / inlineCode) are never split mid-element.
+ * This means `**Hello.** World.` is one sentence (the period is inside the
+ * `<strong>`), which is acceptable degradation for plan/design docs that
+ * rarely embed sentence terminators inside inline formatting.
  */
 
 import { fromMarkdown } from 'mdast-util-from-markdown'
@@ -49,20 +54,152 @@ function srcAttrs(node: Nodes): string {
   return ` data-src-start="${pos.start.offset ?? ''}" data-src-end="${pos.end.offset ?? ''}"`
 }
 
-/** Render an array of children, concatenating their HTML output. */
-function renderChildren(children: readonly Nodes[]): string {
-  let out = ''
-  for (const child of children) out += renderNode(child)
-  return out
+/** Stable per-block id derived from mdast source offset. */
+function blockIdFor(node: Nodes): string {
+  return `b-${node.position?.start.offset ?? 0}`
+}
+
+/**
+ * Walk a text string and split it into sentence-sized fragments.
+ *
+ * Splits after CJK enders (。！？；) and ASCII `!?` unconditionally. Splits
+ * after ASCII `.` only when the next char is whitespace, end-of-string, or a
+ * CJK character — this avoids splitting `Mr.` / `v1.0` while still catching
+ * sentence-ending periods in mixed Chinese/English prose. Trailing whitespace
+ * after a terminator is consumed into the same fragment so the next sentence
+ * starts cleanly.
+ *
+ * Returns parallel arrays — each `fragments[i]` is the raw text for one
+ * sentence-piece, and `terminated[i]` is true iff that piece ends a sentence
+ * (i.e. the next piece should start a new sentence span). The final piece
+ * may be unterminated (mid-sentence text continuing into the next inline
+ * element).
+ */
+function splitTextIntoSentences(text: string): { fragments: string[]; terminated: boolean[] } {
+  const fragments: string[] = []
+  const terminated: boolean[] = []
+  let buf = ''
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i] ?? ''
+    buf += c
+
+    const isCjkEnder = c === '。' || c === '！' || c === '？' || c === '；'
+    let isAsciiEnder = false
+    if (c === '!' || c === '?') {
+      isAsciiEnder = true
+    } else if (c === '.') {
+      const next = text[i + 1]
+      // Period only terminates when not part of a token like `Mr.` or `v1.0`.
+      // CJK char after period treats it as sentence boundary.
+      if (next === undefined || /[\s\u3400-\u9fff]/.test(next)) isAsciiEnder = true
+    }
+
+    if (isCjkEnder || isAsciiEnder) {
+      // Pull trailing whitespace into this fragment so the next sentence
+      // doesn't start with leftover spacing.
+      while (i + 1 < text.length && /\s/.test(text[i + 1] ?? '')) {
+        buf += text[i + 1]
+        i++
+      }
+      fragments.push(buf)
+      terminated.push(true)
+      buf = ''
+    }
+  }
+
+  if (buf.length > 0) {
+    fragments.push(buf)
+    terminated.push(false)
+  }
+
+  return { fragments, terminated }
+}
+
+/**
+ * Render a leaf block's inline children into a sequence of sentence spans.
+ * Sentence breaks come from top-level text nodes; inline elements (strong,
+ * em, link, inlineCode) are appended whole to the current sentence.
+ *
+ * Tracks each sentence's source range (min srcStart .. max srcEnd of its
+ * contributing fragments) and emits `data-src-start/end` on the sentence
+ * span — needed by P4 splice logic to locate the source slice for a given
+ * anchor without re-walking mdast.
+ */
+interface SentenceBuilder {
+  htmlChunks: string[]
+  srcStart: number | null
+  srcEnd: number | null
+  /** True iff every contributing chunk was a plain text fragment (no inline
+   * elements). Sub-sentence char-offset splice is only safe in this case
+   * because rendered char positions equal source positions. */
+  plainOnly: boolean
+}
+
+function renderBlockInlines(children: readonly Nodes[]): string {
+  const sentences: SentenceBuilder[] = [
+    { htmlChunks: [], srcStart: null, srcEnd: null, plainOnly: true },
+  ]
+  const cur = (): SentenceBuilder => sentences[sentences.length - 1]!
+  const widen = (start: number, end: number): void => {
+    const c = cur()
+    if (c.srcStart === null || start < c.srcStart) c.srcStart = start
+    if (c.srcEnd === null || end > c.srcEnd) c.srcEnd = end
+  }
+
+  for (const child of children) {
+    if (child.type === 'text') {
+      const value = child.value
+      const baseStart = child.position?.start.offset ?? 0
+      const { fragments, terminated } = splitTextIntoSentences(value)
+      let cursor = 0
+      for (let i = 0; i < fragments.length; i++) {
+        const frag = fragments[i]!
+        cur().htmlChunks.push(escapeHtml(frag))
+        widen(baseStart + cursor, baseStart + cursor + frag.length)
+        cursor += frag.length
+        if (terminated[i]) {
+          sentences.push({ htmlChunks: [], srcStart: null, srcEnd: null, plainOnly: true })
+        }
+      }
+    } else {
+      // Inline element rendered whole — its rendered length usually differs
+      // from its source length (e.g. `**foo**` = 7 src chars, 3 rendered),
+      // so any sentence containing one loses plainOnly.
+      cur().htmlChunks.push(renderNode(child))
+      cur().plainOnly = false
+      const start = child.position?.start.offset
+      const end = child.position?.end.offset
+      if (typeof start === 'number' && typeof end === 'number') widen(start, end)
+    }
+  }
+
+  let html = ''
+  let idx = 0
+  for (const s of sentences) {
+    if (s.htmlChunks.length === 0) continue
+    const inner = s.htmlChunks.join('')
+    if (inner.length === 0) continue
+    const srcAttr =
+      s.srcStart !== null && s.srcEnd !== null
+        ? ` data-src-start="${s.srcStart}" data-src-end="${s.srcEnd}"`
+        : ''
+    const plainAttr = s.plainOnly ? ' data-plain="1"' : ''
+    html += `<span data-sentence-idx="${idx}"${srcAttr}${plainAttr}>${inner}</span>`
+    idx++
+  }
+  return html
 }
 
 function renderHeading(node: Heading): string {
   const depth = Math.min(Math.max(node.depth, 1), 6)
-  return `<h${depth}${srcAttrs(node)}>${renderChildren(node.children)}</h${depth}>`
+  const id = blockIdFor(node)
+  return `<h${depth} data-block-id="${id}"${srcAttrs(node)}>${renderBlockInlines(node.children)}</h${depth}>`
 }
 
 function renderParagraph(node: Paragraph): string {
-  return `<p${srcAttrs(node)}>${renderChildren(node.children)}</p>`
+  const id = blockIdFor(node)
+  return `<p data-block-id="${id}"${srcAttrs(node)}>${renderBlockInlines(node.children)}</p>`
 }
 
 function renderList(node: List): string {
@@ -75,38 +212,50 @@ function renderList(node: List): string {
 }
 
 function renderListItem(node: ListItem): string {
+  // listItem is a container, not a leaf block. Its block children (typically
+  // a paragraph) each get their own block-id via renderParagraph etc.
   return `<li${srcAttrs(node)}>${renderChildren(node.children)}</li>`
 }
 
 function renderCode(node: Code): string {
   const langAttr = node.lang ? ` class="language-${escapeHtml(node.lang)}"` : ''
-  // <pre> + <code> form a logical unit; attach src offsets to the outer <pre>
-  // so anchor mapping treats the fenced block as a single source range.
-  return `<pre${srcAttrs(node)}><code${langAttr}>${escapeHtml(node.value)}</code></pre>`
+  const id = blockIdFor(node)
+  // Code blocks are atomic — entire value is one sentence so users can
+  // address the block as a whole but never partial code lines. The sentence
+  // span carries the same source range as the `<pre>` so applyRewrite
+  // splices the whole fenced block (fences included).
+  const start = node.position?.start.offset ?? 0
+  const end = node.position?.end.offset ?? 0
+  return `<pre data-block-id="${id}"${srcAttrs(node)}><code${langAttr}><span data-sentence-idx="0" data-src-start="${start}" data-src-end="${end}">${escapeHtml(node.value)}</span></code></pre>`
 }
 
 function renderInlineCode(node: InlineCode): string {
-  return `<code${srcAttrs(node)}>${escapeHtml(node.value)}</code>`
+  return `<code>${escapeHtml(node.value)}</code>`
 }
 
 function renderStrong(node: Strong): string {
-  return `<strong${srcAttrs(node)}>${renderChildren(node.children)}</strong>`
+  return `<strong>${renderChildren(node.children)}</strong>`
 }
 
 function renderEmphasis(node: Emphasis): string {
-  return `<em${srcAttrs(node)}>${renderChildren(node.children)}</em>`
+  return `<em>${renderChildren(node.children)}</em>`
 }
 
 function renderLink(node: Link): string {
   const href = escapeHtml(node.url)
   const titleAttr = node.title ? ` title="${escapeHtml(node.title)}"` : ''
-  return `<a href="${href}"${titleAttr}${srcAttrs(node)}>${renderChildren(node.children)}</a>`
+  return `<a href="${href}"${titleAttr}>${renderChildren(node.children)}</a>`
 }
 
 function renderText(node: Text): string {
-  // Wrap text in a span carrying src offsets so DOM-range → source-offset
-  // mapping has a stable anchor for every character of rendered prose.
-  return `<span${srcAttrs(node)}>${escapeHtml(node.value)}</span>`
+  return escapeHtml(node.value)
+}
+
+/** Render an array of children, concatenating their HTML output. */
+function renderChildren(children: readonly Nodes[]): string {
+  let out = ''
+  for (const child of children) out += renderNode(child)
+  return out
 }
 
 /**
@@ -158,9 +307,8 @@ function renderNode(node: Nodes): string {
 
 /**
  * Parse markdown source and render it to HTML. The returned HTML carries
- * `data-src-start` / `data-src-end` attributes on every block element and
- * text span so DOM positions can be mapped back to source offsets by the
- * anchor algorithm.
+ * `data-block-id` on each leaf block (paragraph / heading / code) and a
+ * `<span data-sentence-idx="N">` for each sentence-sized chunk inside.
  */
 export function renderMarkdown(source: string): string {
   const tree = fromMarkdown(source)

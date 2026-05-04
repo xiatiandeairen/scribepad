@@ -1,51 +1,52 @@
 /**
- * anchor.ts — selection ↔ markdown source offset bidirectional algorithms.
+ * anchor.ts — selection ↔ block-scoped sentence anchor.
  *
- * Companion to `src/lib/markdown.ts`, which renders mdast → HTML and stamps
- * `data-src-start` / `data-src-end` attributes on block elements (paragraphs,
- * headings, list items, etc.). Those attributes are character offsets into the
- * original markdown source string.
- *
- * Two directions:
+ * Bidirectional:
  *
  *   1. domSelectionToAnchor(range)
- *      User makes a DOM selection inside the rendered article. We find the
- *      nearest ancestor with `data-src-start`, and convert the in-DOM offset
- *      to a markdown source offset by counting text-content characters
- *      preceding the selection boundary inside that ancestor.
+ *      User makes a DOM selection inside the rendered article. We require
+ *      both endpoints to land inside `[data-sentence-idx]` spans within the
+ *      same `[data-block-id]` block. Cross-block selections return null.
+ *      Same-sentence selections produce a sub-sentence anchor with
+ *      charStart/charEnd; cross-sentence selections snap to whole
+ *      sentence boundaries (charStart/charEnd undefined).
  *
  *   2. locateAnchorInDom(rootEl, anchor)
- *      Given a previously-saved anchor (srcStart/srcEnd), find the DOM
- *      element whose data-src range contains it, then walk text nodes to
- *      compute the start/end DOM offsets matching the source offsets.
+ *      Given a stored Anchor, find the block element and the contiguous
+ *      sentence spans it covers. For sub-sentence anchors we additionally
+ *      construct a DOM Range for the in-sentence char span.
  *
  * Both functions are read-only — they neither mutate the DOM nor the source.
- *
- * NOTE: the conversion is approximate — it assumes the rendered text-content
- * of a block element matches the source slice character-for-character at the
- * granularity scribepad cares about. Markdown syntax markers (`*`, `#`, etc.)
- * are stripped during rendering, so to avoid drift we anchor at block level
- * (data-src-* lives on block elements) and use plain text-content offsets
- * within the block. For inline-formatted text (bold/italic/code) the rendered
- * length matches the source's "visible" length closely enough for v0.1
- * practical use cases (validated by 36 e2e tests in the v0.1 MVP).
  */
 
-import type { Anchor } from '../../types/annotation'
+import type { Anchor, Annotation } from '../../types/annotation'
 
 /**
- * Walk up from a DOM node to the nearest ancestor element with
- * `data-src-start` and `data-src-end` attributes. Returns null if no such
- * ancestor exists (e.g. selection landed outside the rendered article).
+ * AnchorLocation — what locateAnchorInDom returns when an anchor is alive.
+ *
+ * `sentences` is contiguous, ordered ascending by sentence-idx, length ≥ 1.
+ * `subRange` is set only when the anchor is sub-sentence (charStart/charEnd
+ * present and start === end); it carries the in-sentence char span as a
+ * native DOM Range that callers can wrap with `<mark>` directly.
  */
-function findSrcAncestor(node: Node | null): HTMLElement | null {
+export interface AnchorLocation {
+  block: HTMLElement
+  sentences: HTMLElement[]
+  subRange?: Range
+}
+
+const isBlockEl = (el: Element): boolean => el.hasAttribute('data-block-id')
+const isSentenceEl = (el: Element): boolean => el.hasAttribute('data-sentence-idx')
+
+/** Walk up from `node` until an element matching `predicate` is found. */
+function findClosestAncestor(
+  node: Node | null,
+  predicate: (el: Element) => boolean,
+): HTMLElement | null {
   let cur: Node | null = node
   while (cur) {
-    if (cur.nodeType === Node.ELEMENT_NODE) {
-      const el = cur as HTMLElement
-      if (el.hasAttribute('data-src-start') && el.hasAttribute('data-src-end')) {
-        return el
-      }
+    if (cur.nodeType === Node.ELEMENT_NODE && predicate(cur as Element)) {
+      return cur as HTMLElement
     }
     cur = cur.parentNode
   }
@@ -53,38 +54,32 @@ function findSrcAncestor(node: Node | null): HTMLElement | null {
 }
 
 /**
- * Count the number of text characters inside `ancestor` that appear before
- * the given (node, offset) boundary, in document order.
+ * Count plain-text characters inside `root` that appear before the
+ * (boundaryNode, boundaryOffset) DOM-Range boundary, in document order.
  *
- * If `node` is the ancestor itself, we count characters in the first
- * `offset` children. If `node` is a descendant text node, we count all text
- * preceding it inside the ancestor, then add `offset`. If `node` is a
- * descendant element, we count text preceding it, then dive into its first
- * `offset` children.
+ * If `boundaryNode` is a text node, we count `boundaryOffset` chars of it.
+ * If it's an element, we count text in its first `boundaryOffset` children.
  */
-function countTextBefore(ancestor: HTMLElement, node: Node, offset: number): number {
-  // Build an ordered list of text nodes inside ancestor, then walk until
-  // we either reach the boundary or pass it.
+function charsBeforeBoundary(
+  root: HTMLElement,
+  boundaryNode: Node,
+  boundaryOffset: number,
+): number {
   let count = 0
-  let reached = false
+  let done = false
 
   const walk = (n: Node): void => {
-    if (reached) return
+    if (done) return
 
-    if (n === node) {
+    if (n === boundaryNode) {
       if (n.nodeType === Node.TEXT_NODE) {
-        count += offset
-        reached = true
-        return
+        count += boundaryOffset
+      } else if (n.nodeType === Node.ELEMENT_NODE) {
+        const kids = n.childNodes
+        const limit = Math.min(boundaryOffset, kids.length)
+        for (let i = 0; i < limit; i++) walk(kids[i]!)
       }
-      // Element boundary: count text in the first `offset` children.
-      const children = n.childNodes
-      const limit = Math.min(offset, children.length)
-      for (let i = 0; i < limit; i++) {
-        const child = children[i]
-        if (child) walk(child)
-      }
-      reached = true
+      done = true
       return
     }
 
@@ -94,212 +89,404 @@ function countTextBefore(ancestor: HTMLElement, node: Node, offset: number): num
     }
 
     if (n.nodeType === Node.ELEMENT_NODE) {
-      const children = n.childNodes
-      for (let i = 0; i < children.length; i++) {
-        if (reached) return
-        const child = children[i]
-        if (child) walk(child)
+      const kids = n.childNodes
+      for (let i = 0; i < kids.length; i++) {
+        if (done) return
+        walk(kids[i]!)
       }
     }
   }
 
-  walk(ancestor)
+  walk(root)
   return count
 }
 
 /**
- * Convert a DOM Range to an Anchor in markdown-source coordinates.
- *
- * Algorithm:
- *   1. Find the nearest ancestor with data-src-start covering startContainer
- *      (and similarly for endContainer — they may differ for cross-block
- *       selections, in which case we fall back to using the start ancestor's
- *       data-src-end as the end boundary; v0.1 anchors at block level).
- *   2. Read the ancestor's data-src-start as the block's source offset.
- *   3. Count text-content characters inside the ancestor up to the range's
- *      start/end boundary; add to data-src-start to get srcStart/srcEnd.
- *
- * Returns null if no ancestor has data-src attributes (selection outside
- * the rendered article).
+ * Locate the (textNode, offset) inside `el` that corresponds to consuming
+ * `target` characters of plain text content. Returns null when `target`
+ * exceeds the element's total text length.
  */
-export function domSelectionToAnchor(range: Range): Anchor | null {
-  const startAncestor = findSrcAncestor(range.startContainer)
-  const endAncestor = findSrcAncestor(range.endContainer)
-
-  if (!startAncestor) return null
-
-  const startBase = Number.parseInt(startAncestor.getAttribute('data-src-start') ?? '', 10)
-  if (Number.isNaN(startBase)) return null
-
-  const startInner = countTextBefore(startAncestor, range.startContainer, range.startOffset)
-  const srcStart = startBase + startInner
-
-  let srcEnd: number
-  if (endAncestor && endAncestor === startAncestor) {
-    const endInner = countTextBefore(startAncestor, range.endContainer, range.endOffset)
-    srcEnd = startBase + endInner
-  } else if (endAncestor) {
-    // Cross-block selection — anchor end at the end ancestor's start + inner.
-    const endBase = Number.parseInt(endAncestor.getAttribute('data-src-start') ?? '', 10)
-    if (Number.isNaN(endBase)) return null
-    const endInner = countTextBefore(endAncestor, range.endContainer, range.endOffset)
-    srcEnd = endBase + endInner
-  } else {
-    // End not inside any data-src ancestor — clamp to start ancestor's end.
-    const startEnd = Number.parseInt(startAncestor.getAttribute('data-src-end') ?? '', 10)
-    if (Number.isNaN(startEnd)) return null
-    srcEnd = startEnd
-  }
-
-  if (srcEnd < srcStart) return null
-
-  const text = range.toString()
-  return { srcStart, srcEnd, text }
-}
-
-/**
- * Find the smallest data-src element under `root` whose [data-src-start,
- * data-src-end] range encloses [anchor.srcStart, anchor.srcEnd]. "Smallest"
- * = innermost match wins (later in document order with tighter bounds), so
- * a list item beats its containing list.
- */
-function findEnclosingElement(root: HTMLElement, anchor: Anchor): HTMLElement | null {
-  // querySelectorAll returns elements in document order; filter by bounds.
-  const candidates = root.querySelectorAll<HTMLElement>('[data-src-start]')
-  let best: HTMLElement | null = null
-  let bestSpan = Number.POSITIVE_INFINITY
-
-  for (let i = 0; i < candidates.length; i++) {
-    const el = candidates[i]
-    if (!el) continue
-    const s = Number.parseInt(el.getAttribute('data-src-start') ?? '', 10)
-    const e = Number.parseInt(el.getAttribute('data-src-end') ?? '', 10)
-    if (Number.isNaN(s) || Number.isNaN(e)) continue
-    if (s <= anchor.srcStart && e >= anchor.srcEnd) {
-      const span = e - s
-      if (span < bestSpan) {
-        best = el
-        bestSpan = span
-      }
-    }
-  }
-  return best
-}
-
-/**
- * Walk text nodes inside `el` and locate the (textNode, offset) pair that
- * corresponds to consuming `target` characters of text content. Returns null
- * if `target` exceeds the total text length.
- */
-function locateOffsetInElement(
-  el: HTMLElement,
-  target: number,
-): { node: Node; offset: number } | null {
-  let remaining = target
-
-  // Manual depth-first traversal of text nodes.
-  const stack: Node[] = [el]
-  // Use a queue-style traversal preserving document order via reverse-push.
-  const order: Node[] = []
+function locateCharOffset(el: HTMLElement, target: number): { node: Node; offset: number } | null {
+  const textNodes: Text[] = []
   const collect = (n: Node): void => {
     if (n.nodeType === Node.TEXT_NODE) {
-      order.push(n)
+      textNodes.push(n as Text)
       return
     }
     if (n.nodeType === Node.ELEMENT_NODE) {
-      const children = n.childNodes
-      for (let i = 0; i < children.length; i++) {
-        const c = children[i]
-        if (c) collect(c)
-      }
+      for (let i = 0; i < n.childNodes.length; i++) collect(n.childNodes[i]!)
     }
   }
-  // stack unused; collect directly
-  void stack
   collect(el)
 
-  for (let i = 0; i < order.length; i++) {
-    const tn = order[i]
-    if (!tn) continue
+  let remaining = target
+  for (const tn of textNodes) {
     const len = (tn.textContent ?? '').length
-    if (remaining <= len) {
-      return { node: tn, offset: remaining }
-    }
+    if (remaining <= len) return { node: tn, offset: remaining }
     remaining -= len
   }
-
-  // If target equals total length, point past the last text node.
-  const last = order[order.length - 1]
-  if (last && remaining === 0) {
-    return { node: last, offset: (last.textContent ?? '').length }
-  }
+  // target equals total length → point past the last text node
+  const last = textNodes[textNodes.length - 1]
+  if (last && remaining === 0) return { node: last, offset: (last.textContent ?? '').length }
   return null
 }
 
 /**
- * Locate an Anchor's DOM range under `rootEl`. Returns the start text node
- * and the start/end offsets within it (or spanning text nodes if the anchor
- * crosses inline elements — caller should consult `node` and use
- * Range.setStart/setEnd separately if needed).
+ * CSS.escape with safe fallback for environments lacking the API.
  *
- * Returns null when no enclosing data-src element exists (stale anchor —
- * source has been edited externally, offsets no longer map).
- *
- * NOTE: For v0.1 we return a single { node, startOffset, endOffset } shape
- * matching the spec. When the anchor spans multiple text nodes inside the
- * enclosing element, `node` is the start text node; callers needing precise
- * end-node positioning should re-derive via locateOffsetInElement themselves.
+ * Used to embed anchor.blockId in a querySelector — block ids are
+ * `b-{number}` so escaping is mostly defensive.
  */
-export function locateAnchorInDom(
-  rootEl: HTMLElement,
-  anchor: Anchor,
-): { node: Node; startOffset: number; endOffset: number } | null {
-  const el = findEnclosingElement(rootEl, anchor)
-  if (!el) return null
+function cssEscape(s: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(s)
+  }
+  return s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c.charCodeAt(0).toString(16)} `)
+}
 
-  const base = Number.parseInt(el.getAttribute('data-src-start') ?? '', 10)
-  if (Number.isNaN(base)) return null
+/**
+ * Convert a DOM Range to a block-scoped sentence Anchor.
+ *
+ * Returns null when:
+ *   - either endpoint lies outside any `[data-block-id]` block
+ *   - the two endpoints lie in different blocks (cross-block forbidden)
+ *   - either endpoint is in inter-sentence whitespace (no sentence span)
+ *   - the range is collapsed within a single sentence (zero-width phrase)
+ *
+ * When start and end land in the same sentence span, returns a sub-sentence
+ * anchor with `charStart/charEnd` set. Otherwise returns a multi-sentence
+ * anchor whose `[startSentenceIdx, endSentenceIdx]` covers all sentences
+ * touched by the original range — equivalent to auto-snapping the visual
+ * selection out to whole-sentence boundaries.
+ */
+export function domSelectionToAnchor(range: Range): Anchor | null {
+  const startBlock = findClosestAncestor(range.startContainer, isBlockEl)
+  const endBlock = findClosestAncestor(range.endContainer, isBlockEl)
+  if (!startBlock || !endBlock || startBlock !== endBlock) return null
 
-  const innerStart = anchor.srcStart - base
-  const innerEnd = anchor.srcEnd - base
+  const blockId = startBlock.getAttribute('data-block-id')
+  if (!blockId) return null
 
-  const startLoc = locateOffsetInElement(el, innerStart)
-  const endLoc = locateOffsetInElement(el, innerEnd)
-  if (!startLoc || !endLoc) return null
+  const startSentence = findClosestAncestor(range.startContainer, isSentenceEl)
+  const endSentence = findClosestAncestor(range.endContainer, isSentenceEl)
+  if (!startSentence || !endSentence) return null
+  // Both sentences must be within the same block (defensive — sentence spans
+  // are only emitted inside blocks, but covers nested-edge weirdness).
+  if (!startBlock.contains(startSentence) || !startBlock.contains(endSentence)) return null
 
-  // If start and end land on the same text node, return both offsets on it.
-  if (startLoc.node === endLoc.node) {
+  const startIdx = Number.parseInt(startSentence.getAttribute('data-sentence-idx') ?? '', 10)
+  const endIdx = Number.parseInt(endSentence.getAttribute('data-sentence-idx') ?? '', 10)
+  if (Number.isNaN(startIdx) || Number.isNaN(endIdx)) return null
+
+  // Phrase mode — same sentence span.
+  if (startIdx === endIdx && startSentence === endSentence) {
+    const charStart = charsBeforeBoundary(startSentence, range.startContainer, range.startOffset)
+    const charEnd = charsBeforeBoundary(startSentence, range.endContainer, range.endOffset)
+    if (charEnd <= charStart) return null
     return {
-      node: startLoc.node,
-      startOffset: startLoc.offset,
-      endOffset: endLoc.offset,
+      blockId,
+      startSentenceIdx: startIdx,
+      endSentenceIdx: endIdx,
+      charStart,
+      charEnd,
+      text: range.toString(),
     }
   }
 
-  // Different text nodes — return start node + full length of start node as
-  // endOffset, and let caller handle multi-node ranges. The spec's return
-  // shape is single-node; v0.1 callers building DOM Ranges should fall back
-  // to constructing a Range with setStart(startLoc.node, startLoc.offset)
-  // and setEnd(endLoc.node, endLoc.offset) directly. We expose the start
-  // node here (most common case for highlighting) and let the end "leak" to
-  // its node's full length so visual highlight is at least conservative.
-  const startLen = (startLoc.node.textContent ?? '').length
+  // Multi-sentence — snap to whole sentences. Order endpoints in case the
+  // user dragged backward.
+  const lo = Math.min(startIdx, endIdx)
+  const hi = Math.max(startIdx, endIdx)
+  let text = ''
+  const allSentences = startBlock.querySelectorAll<HTMLElement>('[data-sentence-idx]')
+  allSentences.forEach((s) => {
+    const idx = Number.parseInt(s.getAttribute('data-sentence-idx') ?? '', 10)
+    if (Number.isNaN(idx)) return
+    if (idx >= lo && idx <= hi) text += s.textContent ?? ''
+  })
+
   return {
-    node: startLoc.node,
-    startOffset: startLoc.offset,
-    endOffset: startLen,
+    blockId,
+    startSentenceIdx: lo,
+    endSentenceIdx: hi,
+    text,
   }
+}
+
+/**
+ * Find the DOM elements (and optional sub-range) the anchor refers to.
+ *
+ * Returns null when the named block no longer exists or none of the
+ * referenced sentence indices are present (source drift).
+ */
+export function locateAnchorInDom(rootEl: HTMLElement, anchor: Anchor): AnchorLocation | null {
+  const block = rootEl.querySelector<HTMLElement>(`[data-block-id="${cssEscape(anchor.blockId)}"]`)
+  if (!block) return null
+
+  const sentences: HTMLElement[] = []
+  const allSentences = block.querySelectorAll<HTMLElement>('[data-sentence-idx]')
+  allSentences.forEach((s) => {
+    const idx = Number.parseInt(s.getAttribute('data-sentence-idx') ?? '', 10)
+    if (Number.isNaN(idx)) return
+    if (idx >= anchor.startSentenceIdx && idx <= anchor.endSentenceIdx) {
+      sentences.push(s)
+    }
+  })
+  if (sentences.length === 0) return null
+
+  // Sub-sentence: construct DOM Range for the in-sentence char span.
+  if (
+    anchor.startSentenceIdx === anchor.endSentenceIdx &&
+    anchor.charStart != null &&
+    anchor.charEnd != null
+  ) {
+    const span = sentences[0]!
+    const startLoc = locateCharOffset(span, anchor.charStart)
+    const endLoc = locateCharOffset(span, anchor.charEnd)
+    if (startLoc && endLoc) {
+      const subRange = document.createRange()
+      subRange.setStart(startLoc.node, startLoc.offset)
+      subRange.setEnd(endLoc.node, endLoc.offset)
+      return { block, sentences, subRange }
+    }
+    // Char offsets out of bounds — fall back to whole-sentence highlight.
+  }
+
+  return { block, sentences }
+}
+
+/**
+ * Resolve an Anchor to a `[srcStart, srcEnd]` source-character range so the
+ * caller can splice the markdown source.
+ *
+ * Strategy:
+ *   - whole-sentence (or sub-sentence on a span containing inline elements):
+ *     use `[firstSentence.data-src-start, lastSentence.data-src-end]` directly
+ *   - sub-sentence on a plain-text span (no `<strong>` / `<em>` / etc.):
+ *     refine to `[srcStart + charStart, srcStart + charEnd]` since rendered
+ *     text positions equal source positions for plain text
+ *
+ * Returns null when the anchor's block or sentence span(s) are not found in
+ * `rootEl` (source has drifted since the anchor was created).
+ */
+export function resolveAnchorToSourceRange(
+  rootEl: HTMLElement,
+  anchor: Anchor,
+): [number, number] | null {
+  const block = rootEl.querySelector<HTMLElement>(`[data-block-id="${cssEscape(anchor.blockId)}"]`)
+  if (!block) return null
+
+  const allSentences = block.querySelectorAll<HTMLElement>('[data-sentence-idx]')
+  let startSpan: HTMLElement | null = null
+  let endSpan: HTMLElement | null = null
+  allSentences.forEach((s) => {
+    const idx = Number.parseInt(s.getAttribute('data-sentence-idx') ?? '', 10)
+    if (Number.isNaN(idx)) return
+    if (idx === anchor.startSentenceIdx) startSpan = s
+    if (idx === anchor.endSentenceIdx) endSpan = s
+  })
+  if (!startSpan || !endSpan) return null
+  // Local aliases — TS narrows now that we've null-checked above.
+  const startEl: HTMLElement = startSpan
+  const endEl: HTMLElement = endSpan
+
+  const startSrc = Number.parseInt(startEl.getAttribute('data-src-start') ?? '', 10)
+  const endSrc = Number.parseInt(endEl.getAttribute('data-src-end') ?? '', 10)
+  if (Number.isNaN(startSrc) || Number.isNaN(endSrc)) return null
+
+  // Sub-sentence with plain text: refine to char-precise splice.
+  const isSubSentence =
+    anchor.startSentenceIdx === anchor.endSentenceIdx &&
+    anchor.charStart != null &&
+    anchor.charEnd != null
+  const isPlain = startEl.getAttribute('data-plain') === '1'
+
+  if (isSubSentence && isPlain) {
+    const charStart = anchor.charStart!
+    const charEnd = anchor.charEnd!
+    const refinedStart = startSrc + charStart
+    const refinedEnd = startSrc + charEnd
+    if (refinedStart >= startSrc && refinedEnd <= endSrc && refinedStart < refinedEnd) {
+      return [refinedStart, refinedEnd]
+    }
+  }
+
+  // Whole-sentence range, or sub-sentence on a complex span (degrade to
+  // splicing the whole sentence — preserves markdown markers, AI rewrites
+  // the full sentence).
+  return [startSrc, endSrc]
+}
+
+interface AnchorCandidate {
+  anchor: Anchor
+  srcStart: number
+  key: string
+}
+
+function sentenceText(el: HTMLElement): string {
+  return el.textContent ?? ''
+}
+
+function sentenceSrcStart(el: HTMLElement): number | null {
+  const raw = Number.parseInt(el.getAttribute('data-src-start') ?? '', 10)
+  return Number.isNaN(raw) ? null : raw
+}
+
+function getBlockSentences(block: HTMLElement): HTMLElement[] {
+  return Array.from(block.querySelectorAll<HTMLElement>('[data-sentence-idx]'))
+}
+
+function buildAnchorCandidates(rootEl: HTMLElement, target: Anchor): AnchorCandidate[] {
+  const blocks = Array.from(rootEl.querySelectorAll<HTMLElement>('[data-block-id]'))
+  const targetText = target.text
+  const out: AnchorCandidate[] = []
+
+  const isSubSentence =
+    target.startSentenceIdx === target.endSentenceIdx &&
+    target.charStart != null &&
+    target.charEnd != null
+
+  for (const block of blocks) {
+    const blockId = block.getAttribute('data-block-id')
+    if (!blockId) continue
+    const sentences = getBlockSentences(block)
+
+    if (isSubSentence) {
+      for (const span of sentences) {
+        const text = sentenceText(span)
+        if (!text) continue
+        let from = 0
+        while (from <= text.length) {
+          const idx = text.indexOf(targetText, from)
+          if (idx < 0) break
+          const sentenceIdx = Number.parseInt(span.getAttribute('data-sentence-idx') ?? '', 10)
+          const srcStart = sentenceSrcStart(span)
+          if (!Number.isNaN(sentenceIdx) && srcStart != null) {
+            const anchor: Anchor = {
+              blockId,
+              startSentenceIdx: sentenceIdx,
+              endSentenceIdx: sentenceIdx,
+              charStart: idx,
+              charEnd: idx + targetText.length,
+              text: targetText,
+            }
+            out.push({
+              anchor,
+              srcStart: srcStart + idx,
+              key: `${blockId}:${sentenceIdx}:${idx}:${idx + targetText.length}`,
+            })
+          }
+          from = idx + 1
+        }
+      }
+      continue
+    }
+
+    for (let start = 0; start < sentences.length; start++) {
+      let combined = ''
+      for (let end = start; end < sentences.length; end++) {
+        combined += sentenceText(sentences[end]!)
+        if (!targetText.startsWith(combined)) break
+        if (combined !== targetText) continue
+
+        const startIdx = Number.parseInt(
+          sentences[start]!.getAttribute('data-sentence-idx') ?? '',
+          10,
+        )
+        const endIdx = Number.parseInt(sentences[end]!.getAttribute('data-sentence-idx') ?? '', 10)
+        const srcStart = sentenceSrcStart(sentences[start]!)
+        if (Number.isNaN(startIdx) || Number.isNaN(endIdx) || srcStart == null) continue
+        out.push({
+          anchor: {
+            blockId,
+            startSentenceIdx: startIdx,
+            endSentenceIdx: endIdx,
+            text: targetText,
+          },
+          srcStart,
+          key: `${blockId}:${startIdx}:${endIdx}`,
+        })
+        break
+      }
+    }
+  }
+
+  return out
+}
+
+function chooseNearestCandidate(
+  candidates: AnchorCandidate[],
+  expectedStart: number,
+  usedKeys: Set<string>,
+): Anchor | null {
+  let best: AnchorCandidate | null = null
+  let bestDistance = Number.POSITIVE_INFINITY
+
+  for (const candidate of candidates) {
+    if (usedKeys.has(candidate.key)) continue
+    const distance = Math.abs(candidate.srcStart - expectedStart)
+    if (distance < bestDistance) {
+      best = candidate
+      bestDistance = distance
+    }
+  }
+
+  if (!best) return null
+  usedKeys.add(best.key)
+  return best.anchor
+}
+
+/**
+ * Re-anchor surviving annotations after a source rewrite.
+ *
+ * The rewritten annotation itself is left untouched by this helper; callers
+ * typically mark it `status='applied'` and hide it from the live UI. For all
+ * other open annotations we try to find the same visible `anchor.text` in the
+ * freshly-rendered document and migrate `blockId` / sentence indexes to the
+ * nearest source position after applying the rewrite delta.
+ */
+export function remapAnchorsAfterRewrite(
+  oldRootEl: HTMLElement,
+  newRootEl: HTMLElement,
+  annotations: Annotation[],
+  rewrittenId: string,
+  rewrittenRange: [number, number],
+  replacement: string,
+): Annotation[] {
+  const [rewriteStart, rewriteEnd] = rewrittenRange
+  const delta = replacement.length - (rewriteEnd - rewriteStart)
+  const usedKeys = new Set<string>()
+
+  return annotations.map((anno) => {
+    if (anno.id === rewrittenId || anno.status !== 'open') return anno
+
+    const oldRange = resolveAnchorToSourceRange(oldRootEl, anno.anchor)
+    if (!oldRange) return anno
+
+    const [oldStart, oldEnd] = oldRange
+    if (oldEnd <= rewriteStart) return anno
+
+    const expectedStart = oldStart >= rewriteEnd ? oldStart + delta : oldStart
+    const nextAnchor = chooseNearestCandidate(
+      buildAnchorCandidates(newRootEl, anno.anchor),
+      expectedStart,
+      usedKeys,
+    )
+
+    return nextAnchor ? { ...anno, anchor: nextAnchor } : anno
+  })
 }
 
 /**
  * Slice the markdown source between offsets and apply light normalization
  * suitable for display (collapse runs of 3+ newlines down to 2, trim trailing
  * whitespace on each line). Pure function — no DOM, no I/O.
+ *
+ * Kept for callers that still need raw source slicing during the v0.2
+ * transition; sentence-level anchors do their own slicing in P3/P4.
  */
 export function extractTextAtRange(source: string, srcStart: number, srcEnd: number): string {
   if (srcStart < 0 || srcEnd < srcStart || srcEnd > source.length) return ''
   const raw = source.slice(srcStart, srcEnd)
-  // Collapse 3+ consecutive newlines to a paragraph break (2 newlines).
-  // Trim trailing spaces/tabs on each line.
   return raw.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n')
 }

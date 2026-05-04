@@ -1,16 +1,20 @@
 /**
- * Annotation v2 schema — paragraph-level state machine + audit trail.
+ * Annotation v0.2 schema — block-scoped, sentence-level anchor.
  *
- * Used by v0.2 (state machine) and prepared for v0.3 (audit trail UI / multi-agent).
- * Defined in this sprint, not yet wired into runtime — sidecar IO still treats
- * unknown fields opaquely so older sidecars are forward-compatible until v0.2 lands.
+ * Anchor carries:
+ *   - blockId        — addresses a leaf block (paragraph / heading / code)
+ *   - sentence range — start/end sentence index within that block
+ *   - optional char range — sub-sentence span when start === end
+ *
+ * This shape forbids cross-block anchors by construction (one blockId only).
+ * v0.1's `srcStart/srcEnd` global offsets are removed; sample sidecar must
+ * be cleaned before this version mounts.
  */
 
 export type AnnotationState =
   | 'draft' // 默认,刚创建
   | 'discussed' // 讨论中
   | 'decided' // 已决定(防 AI 漂移)
-  | 'executed' // 已执行(plan→exec 闭环)
 
 export type AnnotationStatus =
   | 'open' // 当前活跃
@@ -20,14 +24,22 @@ export type AnnotationStatus =
 export type AnnotationTemplateHint = 'plan' | 'design' | 'research' | 'analysis'
 
 /**
- * Anchor — locates a selection in the markdown source.
- * srcStart/srcEnd are character offsets into the markdown source string.
- * `text` is the rendered text at creation time, used for stale detection
- * when source has been edited externally.
+ * Anchor — locates an annotation within a single leaf block (paragraph,
+ * heading, or code). Cross-block anchors are not representable.
+ *
+ * Shapes:
+ *   - whole sentence(s):  charStart/charEnd undefined; start ≤ end
+ *   - sub-sentence phrase: start === end, charStart < charEnd, both in [0, sentenceLen]
+ *
+ * `text` is the rendered text captured at creation time, used both for
+ * display in the sidebar and for stale detection if the source has drifted.
  */
 export interface Anchor {
-  srcStart: number
-  srcEnd: number
+  blockId: string
+  startSentenceIdx: number
+  endSentenceIdx: number
+  charStart?: number
+  charEnd?: number
   text: string
 }
 
@@ -57,10 +69,10 @@ export interface Annotation {
 
 /**
  * Sidecar — the on-disk format `.{filename}.annotations.json`.
- * version=2 introduces state/history/template_hint; v1 sidecars (without state)
- * will be migrated by reading code in v0.2 (TBD strategy).
+ * version=3 ships with the v0.2 sentence-level anchor; v1/v2 sidecars are
+ * not migrated (sample is wiped during the v0.2 rebuild).
  */
 export interface Sidecar {
-  version: 2
+  version: 3
   annotations: Annotation[]
 }
