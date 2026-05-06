@@ -12,14 +12,17 @@ export function annotationsRoute(ctx: AppContext) {
   const app = new Hono()
 
   app.get('/annotations', async (c) => {
-    const annotations = await readAnnotations(ctx.filePath)
+    const session = ctx.sessionManager.getFallbackSession()
+    const annotations = await readAnnotations(session.filePath)
     const body: AnnotationsResponse = { annotations }
     return c.json(body)
   })
 
   app.post('/annotations', async (c) => {
     const req = (await c.req.json()) as AnnotationsRequest
-    await writeAnnotations(ctx.filePath, req.annotations)
+    const session = ctx.sessionManager.getFallbackSession()
+    await writeAnnotations(session.filePath, req.annotations)
+    session.dirty = true
     return c.json({ ok: true })
   })
 

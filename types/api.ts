@@ -51,6 +51,56 @@ export interface RewriteResponse {
   results: RewriteResultEntry[]
 }
 
+// GET /api/session
+export interface SessionResponse {
+  id: string
+  filePath: string
+  fileName: string
+  startedAt: string
+  lastHeartbeatAt: string
+  dirty: boolean
+  exportedAt?: string
+  agentContextPath?: string
+}
+
+// POST /api/session/close
+export interface CloseSessionRequest {
+  exportAgentContext: boolean
+}
+
+// POST /api/session/export
+export interface ExportSessionResponse {
+  agentContextPath: string
+  exportedAt: string
+}
+
+export interface OpenSessionRequest {
+  filePath: string
+}
+
+export interface OpenSessionResponse {
+  sessionId: string
+  url: string
+}
+
+export interface ConnectSessionResponse {
+  clientId: string
+  session: SessionResponse
+}
+
+export interface HeartbeatSessionRequest {
+  clientId: string
+}
+
+export interface DisconnectSessionRequest {
+  clientId: string
+}
+
+export interface DoneSessionResponse {
+  ok: true
+  outputPath: string
+}
+
 // Generic error
 export interface ErrorResponse {
   error: string

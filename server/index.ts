@@ -1,29 +1,108 @@
 /**
- * server/index.ts — entry point.
- * Parses CLI arg (markdown file path), mounts on a target file, starts hono on :3000.
+ * server/index.ts — CLI entry point.
  *
- * Usage: scribepad <path-to-markdown>
- *
- * v0.2 will wire real route handlers; this is foundation skeleton.
+ * `scribepad <path-to-markdown>` opens a document session on the project-local
+ * scribepad server. If the server is already running, this process reuses it
+ * and exits after printing the session URL.
  */
 import { serve } from '@hono/node-server'
-import { resolve } from 'node:path'
 import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createApp } from './app.js'
+import {
+  cleanupRegistry,
+  findRepoRoot,
+  isServerAlive,
+  openDocumentOnServer,
+  readRegistry,
+  writeRegistry,
+} from './registry.js'
+import { SessionManager } from './services/session-manager.js'
+import { loadConfig } from './config.js'
 
 const arg = process.argv[2]
 if (!arg) {
   console.error('Usage: scribepad <path-to-markdown>')
   process.exit(1)
 }
+
 const filePath = resolve(arg)
 if (!existsSync(filePath)) {
   console.error(`File not found: ${filePath}`)
   process.exit(1)
 }
 
-const app = createApp({ filePath })
-const port = Number(process.env.PORT) || 3000
-serve({ fetch: app.fetch, port })
-console.log(`[scribepad] serving ${filePath}`)
-console.log(`[scribepad] http://localhost:${port}`)
+const explicitPort = process.env.PORT ? Number(process.env.PORT) : undefined
+const sessionMode = explicitPort === undefined
+const repoRoot = findRepoRoot(process.cwd())
+const config = await loadConfig({ env: process.env, repoRoot })
+
+if (sessionMode) {
+  const existing = await readRegistry(repoRoot)
+  if (!process.env.SCRIBEPAD_FORCE_SERVER && existing && (await isServerAlive(existing))) {
+    const opened = await openDocumentOnServer(existing.url, filePath)
+    console.log(`[scribepad] ${opened.url}`)
+    process.exit(0)
+  }
+  if (existing) await cleanupRegistry(repoRoot)
+}
+let baseUrl = 'http://127.0.0.1:0'
+const sessionManager = new SessionManager({ baseUrl: () => baseUrl })
+
+let shutdownStarted = false
+
+function requestClose(reason = 'server closed'): void {
+  if (shutdownStarted) return
+  shutdownStarted = true
+  console.log(`[scribepad] ${reason}`)
+  setTimeout(() => {
+    server.close(() => process.exit(0))
+  }, 25)
+}
+
+const app = createApp({
+  sessionManager,
+  requestClose: sessionMode ? () => requestClose() : undefined,
+  serveClient: sessionMode,
+})
+
+const port = explicitPort ?? 0
+const server = serve({ fetch: app.fetch, port, hostname: config.host }, (info) => {
+  baseUrl = `http://${config.host}:${info.port}`
+  const opened = sessionManager.openSession(filePath)
+  console.log(`[scribepad] serving ${filePath}`)
+  console.log(`[scribepad] ${opened.url}`)
+  if (sessionMode) {
+    console.log('[scribepad] server is shared by document sessions in this repo')
+    void writeRegistry(repoRoot, {
+      pid: process.pid,
+      port: info.port,
+      url: baseUrl,
+      startedAt: new Date().toISOString(),
+      repoRoot,
+    })
+  }
+})
+
+if (sessionMode) {
+  const timer = setInterval(() => {
+    if (
+      sessionManager.shouldShutdown({
+        initialIdleMs: config.initialIdleMs,
+        activeIdleMs: config.activeIdleMs,
+      })
+    ) {
+      clearInterval(timer)
+      void cleanupRegistry(repoRoot)
+      requestClose('server idle timeout; shutting down')
+    }
+  }, 5_000)
+  timer.unref()
+}
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    void cleanupRegistry(repoRoot)
+    requestClose(`${signal} received; shutting down`)
+  })
+}

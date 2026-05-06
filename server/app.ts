@@ -13,10 +13,16 @@ import { resolve } from 'node:path'
 import { fileRoute } from './routes/file.js'
 import { annotationsRoute } from './routes/annotations.js'
 import { rewriteRoute } from './routes/rewrite.js'
+import { sessionRoute } from './routes/session.js'
+import { sessionsRoute } from './routes/sessions.js'
+import type { SessionManager } from './services/session-manager.js'
 
 export interface AppContext {
-  /** Absolute path to the markdown file being served. */
-  filePath: string
+  sessionManager: SessionManager
+  /** Request graceful shutdown after the current HTTP response is sent. */
+  requestClose?: () => void
+  /** Serve the built SPA outside NODE_ENV=production, used by CLI session mode. */
+  serveClient?: boolean
 }
 
 export function createApp(ctx: AppContext) {
@@ -26,26 +32,28 @@ export function createApp(ctx: AppContext) {
   app.route('/api', fileRoute(ctx))
   app.route('/api', annotationsRoute(ctx))
   app.route('/api', rewriteRoute(ctx))
+  app.route('/api', sessionRoute(ctx))
+  app.route('/api', sessionsRoute(ctx))
 
   app.get('/healthz', (c) => c.json({ ok: true }))
+  app.get('/api/healthz', (c) => c.json({ ok: true }))
 
   // Prod-only static serving (review G3 #1).
   // Skip entirely in dev — dev clients live on Vite (:5173) and proxy /api → here.
   // Otherwise stale dist/client (from a prior build) would shadow the live Vite UI
   // and confuse developers who hit :3000 by mistake.
   const isProd = process.env.NODE_ENV === 'production'
+  const shouldServeClient = isProd || ctx.serveClient === true
   const clientDir = resolve(process.cwd(), 'dist/client')
   const indexHtml = resolve(clientDir, 'index.html')
 
-  if (isProd && existsSync(clientDir)) {
+  if (shouldServeClient && existsSync(clientDir)) {
     app.use('/*', serveStatic({ root: './dist/client' }))
     if (existsSync(indexHtml)) {
       app.get('/*', serveStatic({ path: './dist/client/index.html' }))
     }
-  } else if (isProd) {
-    console.warn(
-      `[scribepad] prod mode but dist/client not found at ${clientDir}; run \`npm run build\` first.`,
-    )
+  } else if (shouldServeClient) {
+    console.warn(`[scribepad] client build not found at ${clientDir}; run \`npm run build\` first.`)
   } else {
     // Dev: catch any non-/api GET and tell the user to use Vite.
     app.get('/*', (c) =>

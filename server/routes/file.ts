@@ -13,14 +13,17 @@ export function fileRoute(ctx: AppContext) {
   const app = new Hono()
 
   app.get('/file', async (c) => {
-    const doc = await readDocument(ctx.filePath)
+    const session = ctx.sessionManager.getFallbackSession()
+    const doc = await readDocument(session.filePath)
     const body: FileResponse = { path: doc.path, content: doc.content }
     return c.json(body)
   })
 
   app.post('/save', async (c) => {
     const req = (await c.req.json()) as SaveRequest
-    await saveDocument(ctx.filePath, req.content)
+    const session = ctx.sessionManager.getFallbackSession()
+    await saveDocument(session.filePath, req.content)
+    session.dirty = true
     const body: SaveResponse = { ok: true }
     return c.json(body)
   })

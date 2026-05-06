@@ -130,6 +130,33 @@ body {
   color: var(--accent);
 }
 
+.session-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.session-actions button {
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.session-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.session-closed {
+  margin: 16px 24px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--card-decided-border);
+  background: var(--card-decided-bg);
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 13px;
+}
+
 button {
   background: var(--surface);
   border: 1px solid var(--border);

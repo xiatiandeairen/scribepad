@@ -1,9 +1,8 @@
 /**
  * Unit tests for renderMarkdown (src/lib/markdown.ts).
  *
- * Asserts the source-offset attributes (`data-src-start` / `data-src-end`) are
- * present on block elements and inline text spans, and that HTML escaping is
- * applied to user content. Uses substring assertions rather than full-string
+ * Asserts block ids, source-offset attributes, sentence spans, and HTML escaping.
+ * Uses substring assertions rather than full-string
  * equality to stay resilient to whitespace / attribute-order changes.
  */
 import { describe, it, expect } from 'vitest'
@@ -13,11 +12,11 @@ describe('renderMarkdown — basic blocks', () => {
   it('renders heading + paragraph with src offsets', () => {
     const html = renderMarkdown('# Hello\n\nworld')
     // Heading block.
-    expect(html).toMatch(/<h1\s+data-src-start="0"\s+data-src-end="7">/)
+    expect(html).toMatch(/<h1[^>]*data-block-id="b-0"[^>]*data-src-start="0"[^>]*data-src-end="7"/)
     expect(html).toContain('Hello')
     expect(html).toContain('</h1>')
     // Paragraph block (offsets 9..14 in source).
-    expect(html).toMatch(/<p\s+data-src-start="9"\s+data-src-end="14">/)
+    expect(html).toMatch(/<p[^>]*data-block-id="b-9"[^>]*data-src-start="9"[^>]*data-src-end="14"/)
     expect(html).toContain('world')
     expect(html).toContain('</p>')
   })
@@ -30,14 +29,15 @@ describe('renderMarkdown — basic blocks', () => {
 describe('renderMarkdown — inline formatting', () => {
   it('preserves strong / em / inlineCode wrappers with src offsets', () => {
     const html = renderMarkdown('a **b** c *d* e `f`')
-    // strong wraps "b"; mdast positions the strong node spanning the **markers**.
-    expect(html).toMatch(/<strong\s+data-src-start="\d+"\s+data-src-end="\d+">/)
+    // The sentence span carries the source range; inline wrappers remain clean.
+    expect(html).toMatch(
+      /<span[^>]*data-sentence-idx="0"[^>]*data-src-start="0"[^>]*data-src-end="19"/,
+    )
+    expect(html).toContain('<strong>b</strong>')
     expect(html).toContain('</strong>')
-    // emphasis wraps "d"
-    expect(html).toMatch(/<em\s+data-src-start="\d+"\s+data-src-end="\d+">/)
+    expect(html).toContain('<em>d</em>')
     expect(html).toContain('</em>')
-    // inline code wraps "f"
-    expect(html).toMatch(/<code\s+data-src-start="\d+"\s+data-src-end="\d+">f<\/code>/)
+    expect(html).toContain('<code>f</code>')
   })
 })
 

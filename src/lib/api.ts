@@ -11,11 +11,16 @@
 import type { Annotation } from '../../types/annotation.js'
 import type {
   AnnotationsResponse,
+  ConnectSessionResponse,
+  DoneSessionResponse,
   ErrorResponse,
+  ExportSessionResponse,
   FileResponse,
+  HeartbeatSessionRequest,
   RewriteRequest,
   RewriteResponse,
   SaveResponse,
+  SessionResponse,
 } from '../../types/api.js'
 
 async function parseOrThrow<T>(res: Response): Promise<T> {
@@ -34,13 +39,17 @@ async function parseOrThrow<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-export async function getFile(): Promise<FileResponse> {
-  const res = await fetch('/api/file')
+function scoped(path: string, sessionId?: string): string {
+  return sessionId ? `/api/sessions/${encodeURIComponent(sessionId)}${path}` : `/api${path}`
+}
+
+export async function getFile(sessionId?: string): Promise<FileResponse> {
+  const res = await fetch(scoped('/file', sessionId))
   return parseOrThrow<FileResponse>(res)
 }
 
-export async function saveDocument(content: string): Promise<SaveResponse> {
-  const res = await fetch('/api/save', {
+export async function saveDocument(content: string, sessionId?: string): Promise<SaveResponse> {
+  const res = await fetch(scoped('/save', sessionId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
@@ -48,13 +57,16 @@ export async function saveDocument(content: string): Promise<SaveResponse> {
   return parseOrThrow<SaveResponse>(res)
 }
 
-export async function getAnnotations(): Promise<AnnotationsResponse> {
-  const res = await fetch('/api/annotations')
+export async function getAnnotations(sessionId?: string): Promise<AnnotationsResponse> {
+  const res = await fetch(scoped('/annotations', sessionId))
   return parseOrThrow<AnnotationsResponse>(res)
 }
 
-export async function saveAnnotations(annotations: Annotation[]): Promise<{ ok: true }> {
-  const res = await fetch('/api/annotations', {
+export async function saveAnnotations(
+  annotations: Annotation[],
+  sessionId?: string,
+): Promise<{ ok: true }> {
+  const res = await fetch(scoped('/annotations', sessionId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ annotations }),
@@ -62,11 +74,85 @@ export async function saveAnnotations(annotations: Annotation[]): Promise<{ ok: 
   return parseOrThrow<{ ok: true }>(res)
 }
 
-export async function requestRewrite(req: RewriteRequest): Promise<RewriteResponse> {
-  const res = await fetch('/api/rewrite', {
+export async function requestRewrite(
+  req: RewriteRequest,
+  sessionId?: string,
+): Promise<RewriteResponse> {
+  const res = await fetch(scoped('/rewrite', sessionId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   })
   return parseOrThrow<RewriteResponse>(res)
+}
+
+export async function getSession(): Promise<SessionResponse> {
+  const res = await fetch('/api/session')
+  return parseOrThrow<SessionResponse>(res)
+}
+
+export async function heartbeatSession(): Promise<SessionResponse> {
+  const res = await fetch('/api/session/heartbeat', { method: 'POST' })
+  return parseOrThrow<SessionResponse>(res)
+}
+
+export async function exportSession(): Promise<ExportSessionResponse> {
+  const res = await fetch('/api/session/export', { method: 'POST' })
+  return parseOrThrow<ExportSessionResponse>(res)
+}
+
+export async function closeSession(exportAgentContext: boolean): Promise<{ ok: true }> {
+  const res = await fetch('/api/session/close', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ exportAgentContext }),
+  })
+  return parseOrThrow<{ ok: true }>(res)
+}
+
+export async function getDocumentSession(sessionId: string): Promise<SessionResponse> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
+  return parseOrThrow<SessionResponse>(res)
+}
+
+export async function connectDocumentSession(sessionId: string): Promise<ConnectSessionResponse> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/connect`, {
+    method: 'POST',
+  })
+  return parseOrThrow<ConnectSessionResponse>(res)
+}
+
+export async function heartbeatDocumentSession(
+  sessionId: string,
+  clientId: string,
+): Promise<SessionResponse> {
+  const req: HeartbeatSessionRequest = { clientId }
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/heartbeat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  return parseOrThrow<SessionResponse>(res)
+}
+
+export function disconnectDocumentSession(sessionId: string, clientId: string): void {
+  const url = `/api/sessions/${encodeURIComponent(sessionId)}/disconnect`
+  const body = JSON.stringify({ clientId })
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }))
+    return
+  }
+  void fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+}
+
+export async function doneDocumentSession(
+  sessionId: string,
+  content: string,
+): Promise<DoneSessionResponse> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/done`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  return parseOrThrow<DoneSessionResponse>(res)
 }

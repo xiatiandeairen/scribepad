@@ -22,14 +22,30 @@
  *   7. lock / unlock / delete from sidebar; cancel from modal reverts to draft
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Annotation, Anchor, AnnotationStatus } from '../types/annotation'
 import { Reader } from './components/Reader'
 import { Sidebar } from './components/Sidebar'
 import { DiffModal } from './components/DiffModal'
-import { getAnnotations, getFile, requestRewrite, saveAnnotations, saveDocument } from './lib/api'
+import { SessionActions } from './components/SessionActions'
+import {
+  closeSession,
+  connectDocumentSession,
+  disconnectDocumentSession,
+  doneDocumentSession,
+  getAnnotations,
+  getDocumentSession,
+  getFile,
+  getSession,
+  heartbeatDocumentSession,
+  heartbeatSession,
+  requestRewrite,
+  saveAnnotations,
+  saveDocument,
+} from './lib/api'
 import { remapAnchorsAfterRewrite, resolveAnchorToSourceRange } from './lib/anchor'
 import { renderMarkdown } from './lib/markdown'
+import type { SessionResponse } from '../types/api'
 
 /** Generate a sortable, collision-resistant id without bringing in a uuid dep. */
 function makeAnnotationId(): string {
@@ -37,7 +53,14 @@ function makeAnnotationId(): string {
   return `a-${Date.now()}-${rand}`
 }
 
+function sessionIdFromLocation(): string | undefined {
+  const match = window.location.pathname.match(/^\/s\/([^/]+)$/)
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined
+}
+
 export function App(): JSX.Element {
+  const documentSessionId = useMemo(() => sessionIdFromLocation(), [])
+  const clientIdRef = useRef<string | null>(null)
   const [content, setContent] = useState<string>('')
   const [path, setPath] = useState<string>('')
   const [annotations, setAnnotations] = useState<Annotation[]>([])
@@ -50,22 +73,31 @@ export function App(): JSX.Element {
   // `data-busy-count` attribute on the layout below.
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [error, setError] = useState<string | null>(null)
+  const [session, setSession] = useState<SessionResponse | null>(null)
+  const [sessionClosed, setSessionClosed] = useState(false)
+  const [closingSession, setClosingSession] = useState(false)
 
   // ── Persistence helper ─────────────────────────────────────────────────
   // Centralised so every optimistic update goes through one error-handling path.
   // We intentionally don't await the network — the caller already updated React
   // state. On failure we surface a toast; rollback (if any) is the caller's job.
-  const persistAnnotations = useCallback((next: Annotation[]): void => {
-    saveAnnotations(next).catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : 'save annotations failed'
-      setError(message)
-    })
-  }, [])
+  const persistAnnotations = useCallback(
+    (next: Annotation[]): void => {
+      saveAnnotations(next, documentSessionId).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'save annotations failed'
+        setError(message)
+      })
+    },
+    [documentSessionId],
+  )
 
   // ── Loader ─────────────────────────────────────────────────────────────
   const reload = useCallback(async (): Promise<void> => {
     try {
-      const [file, anns] = await Promise.all([getFile(), getAnnotations()])
+      const [file, anns] = await Promise.all([
+        getFile(documentSessionId),
+        getAnnotations(documentSessionId),
+      ])
       setContent(file.content)
       setPath(file.path)
       setAnnotations(anns.annotations)
@@ -73,11 +105,64 @@ export function App(): JSX.Element {
       const message = err instanceof Error ? err.message : 'load failed'
       setError(message)
     }
-  }, [])
+  }, [documentSessionId])
 
   useEffect(() => {
     void reload()
   }, [reload])
+
+  useEffect(() => {
+    let stopped = false
+    const load = documentSessionId ? getDocumentSession(documentSessionId) : getSession()
+    load
+      .then((next) => {
+        if (!stopped) setSession(next)
+      })
+      .catch(() => {
+        // Session API is optional in development; keep the editor usable.
+      })
+    return () => {
+      stopped = true
+    }
+  }, [documentSessionId])
+
+  useEffect(() => {
+    if (!documentSessionId) return
+    let stopped = false
+    connectDocumentSession(documentSessionId)
+      .then((connected) => {
+        if (stopped) return
+        clientIdRef.current = connected.clientId
+        setSession(connected.session)
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'connect session failed'
+        setError(message)
+      })
+
+    return () => {
+      stopped = true
+      const clientId = clientIdRef.current
+      if (clientId) disconnectDocumentSession(documentSessionId, clientId)
+      clientIdRef.current = null
+    }
+  }, [documentSessionId])
+
+  useEffect(() => {
+    if (!session || sessionClosed) return
+    const timer = window.setInterval(() => {
+      const clientId = clientIdRef.current
+      const heartbeat =
+        documentSessionId && clientId
+          ? heartbeatDocumentSession(documentSessionId, clientId)
+          : heartbeatSession()
+      heartbeat.then(setSession).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'heartbeat failed'
+        setError(message)
+      })
+    }, 5_000)
+    return () => window.clearInterval(timer)
+  }, [documentSessionId, session, sessionClosed])
 
   // ── Selection / popover ────────────────────────────────────────────────
   // Reader debounces selectionchange and reports the source-coordinate Anchor
@@ -210,10 +295,13 @@ export function App(): JSX.Element {
       persistAnnotations(thinking)
 
       try {
-        const resp = await requestRewrite({
-          fullDoc: content,
-          items: [{ id, selection: target.anchor.text, instruction }],
-        })
+        const resp = await requestRewrite(
+          {
+            fullDoc: content,
+            items: [{ id, selection: target.anchor.text, instruction }],
+          },
+          documentSessionId,
+        )
         const result = resp.results.find((r) => r.id === id)
         if (!result) {
           throw new Error('rewrite returned no result for this annotation')
@@ -245,7 +333,7 @@ export function App(): JSX.Element {
         })
       }
     },
-    [annotations, content, persistAnnotations],
+    [annotations, content, documentSessionId, persistAnnotations],
   )
 
   // ── Lock / Unlock / Delete ─────────────────────────────────────────────
@@ -282,6 +370,25 @@ export function App(): JSX.Element {
     setDecidingModalFor(id)
     setActiveId(id)
   }, [])
+
+  const handleDone = useCallback(async (): Promise<void> => {
+    try {
+      setClosingSession(true)
+      if (documentSessionId) {
+        await doneDocumentSession(documentSessionId, content)
+      } else {
+        await saveDocument(content)
+        await closeSession(true)
+      }
+      setSessionClosed(true)
+      window.alert('已完成任务，网页将自动关闭。')
+      window.close()
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'close session failed'
+      setError(message)
+      setClosingSession(false)
+    }
+  }, [content, documentSessionId])
 
   // ── Modal actions ──────────────────────────────────────────────────────
   // applyRewrite — splice the AI rewrite into the source at the anchor's
@@ -339,13 +446,13 @@ export function App(): JSX.Element {
       setAnnotations(next)
       setDecidingModalFor(null)
 
-      saveDocument(newContent).catch((err: unknown) => {
+      saveDocument(newContent, documentSessionId).catch((err: unknown) => {
         const message = err instanceof Error ? err.message : 'save document failed'
         setError(message)
       })
       persistAnnotations(next)
     },
-    [annotations, content, persistAnnotations],
+    [annotations, content, documentSessionId, persistAnnotations],
   )
 
   const handleAccept = useCallback((): void => {
@@ -392,10 +499,21 @@ export function App(): JSX.Element {
         <strong>scribepad</strong>
         <span className="path">{path}</span>
         <span className="badge">{badgeText}</span>
+        <SessionActions
+          session={session}
+          closing={closingSession}
+          onDone={() => void handleDone()}
+        />
         <button type="button" onClick={() => void reload()} aria-label="重新加载">
           ↻
         </button>
       </header>
+
+      {sessionClosed && (
+        <div className="session-closed" role="status">
+          已完成任务。若浏览器没有自动关闭，请手动关闭此标签页。
+        </div>
+      )}
 
       <main className="layout" data-busy-count={Object.keys(busy).length}>
         <Reader
