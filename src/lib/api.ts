@@ -17,11 +17,13 @@ import type {
   ExportSessionResponse,
   FileResponse,
   HeartbeatSessionRequest,
+  PlanStateResponse,
   RewriteRequest,
   RewriteResponse,
   SaveResponse,
   SessionResponse,
 } from '../../types/api.js'
+import type { PlanItemState } from '../../types/plan.js'
 
 async function parseOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -70,6 +72,23 @@ export async function saveAnnotations(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ annotations }),
+  })
+  return parseOrThrow<{ ok: true }>(res)
+}
+
+export async function getPlanState(sessionId?: string): Promise<PlanStateResponse> {
+  const res = await fetch(scoped('/plan-state', sessionId))
+  return parseOrThrow<PlanStateResponse>(res)
+}
+
+export async function savePlanState(
+  planState: PlanItemState[],
+  sessionId?: string,
+): Promise<{ ok: true }> {
+  const res = await fetch(scoped('/plan-state', sessionId), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planState }),
   })
   return parseOrThrow<{ ok: true }>(res)
 }

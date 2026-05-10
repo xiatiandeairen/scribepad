@@ -27,6 +27,7 @@ import type { Annotation, Anchor, AnnotationStatus } from '../types/annotation'
 import { Reader } from './components/Reader'
 import { Sidebar } from './components/Sidebar'
 import { DiffModal } from './components/DiffModal'
+import { PlanPanel, type ReviewPanelVariant } from './components/PlanPanel'
 import { SessionActions } from './components/SessionActions'
 import {
   closeSession,
@@ -36,16 +37,20 @@ import {
   getAnnotations,
   getDocumentSession,
   getFile,
+  getPlanState,
   getSession,
   heartbeatDocumentSession,
   heartbeatSession,
   requestRewrite,
   saveAnnotations,
   saveDocument,
+  savePlanState,
 } from './lib/api'
 import { remapAnchorsAfterRewrite, resolveAnchorToSourceRange } from './lib/anchor'
 import { renderMarkdown } from './lib/markdown'
+import { inspectPlan } from './lib/plan-inspector'
 import type { SessionResponse } from '../types/api'
+import type { PlanItem, PlanItemState, PlanItemStatus, ReviewMode } from '../types/plan'
 
 /** Generate a sortable, collision-resistant id without bringing in a uuid dep. */
 function makeAnnotationId(): string {
@@ -58,12 +63,23 @@ function sessionIdFromLocation(): string | undefined {
   return match?.[1] ? decodeURIComponent(match[1]) : undefined
 }
 
+function cssEscape(value: string): string {
+  if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value)
+  return value.replace(/"/g, '\\"')
+}
+
 export function App(): JSX.Element {
   const documentSessionId = useMemo(() => sessionIdFromLocation(), [])
   const clientIdRef = useRef<string | null>(null)
   const [content, setContent] = useState<string>('')
   const [path, setPath] = useState<string>('')
   const [annotations, setAnnotations] = useState<Annotation[]>([])
+  const [planState, setPlanState] = useState<PlanItemState[]>([])
+  const [reviewMode, setReviewMode] = useState<ReviewMode>('auto')
+  const [reviewPanelVariant, setReviewPanelVariant] = useState<ReviewPanelVariant>('executive')
+  const [activePlanItemId, setActivePlanItemId] = useState<string | undefined>(undefined)
+  const [rightRailTab, setRightRailTab] = useState<'review' | 'comments'>('review')
+  const [signalsOpen, setSignalsOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [selectionAnchor, setSelectionAnchor] = useState<Anchor | null>(null)
   const [selectionRect, setSelectionRect] = useState<DOMRect | null>(null)
@@ -91,16 +107,28 @@ export function App(): JSX.Element {
     [documentSessionId],
   )
 
+  const persistPlanState = useCallback(
+    (next: PlanItemState[]): void => {
+      savePlanState(next, documentSessionId).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'save plan state failed'
+        setError(message)
+      })
+    },
+    [documentSessionId],
+  )
+
   // ── Loader ─────────────────────────────────────────────────────────────
   const reload = useCallback(async (): Promise<void> => {
     try {
-      const [file, anns] = await Promise.all([
+      const [file, anns, planStateResp] = await Promise.all([
         getFile(documentSessionId),
         getAnnotations(documentSessionId),
+        getPlanState(documentSessionId),
       ])
       setContent(file.content)
       setPath(file.path)
       setAnnotations(anns.annotations)
+      setPlanState(planStateResp.planState)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'load failed'
       setError(message)
@@ -237,6 +265,7 @@ export function App(): JSX.Element {
   // ── Mark click → activate + maybe open modal ───────────────────────────
   const handleMarkClick = useCallback(
     (id: string): void => {
+      setRightRailTab('comments')
       setActiveId(id)
       const anno = annotations.find((a) => a.id === id)
       if (!anno) return
@@ -265,6 +294,7 @@ export function App(): JSX.Element {
       const next = [...annotations, fresh]
       setAnnotations(next)
       setActiveId(fresh.id)
+      setRightRailTab('comments')
       persistAnnotations(next)
     },
     [annotations, persistAnnotations],
@@ -370,6 +400,54 @@ export function App(): JSX.Element {
     setDecidingModalFor(id)
     setActiveId(id)
   }, [])
+
+  const handleTogglePlanItemLocked = useCallback(
+    (item: PlanItem): void => {
+      const now = new Date().toISOString()
+      const status: Exclude<PlanItemStatus, 'stale'> = item.status === 'locked' ? 'open' : 'locked'
+      const nextState: PlanItemState = {
+        id: item.id,
+        status,
+        textHash: item.textHash,
+        updatedAt: now,
+      }
+      const exists = planState.some((state) => state.id === item.id)
+      const next = exists
+        ? planState.map((state) => (state.id === item.id ? nextState : state))
+        : [...planState, nextState]
+      setPlanState(next)
+      persistPlanState(next)
+    },
+    [planState, persistPlanState],
+  )
+
+  const handleSelectPlanItem = useCallback((id: string): void => {
+    setActivePlanItemId(id)
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-plan-item-id="${cssEscape(id)}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+  }, [])
+
+  const handleReviewModeChange = useCallback((mode: ReviewMode): void => {
+    setReviewMode(mode)
+    setActivePlanItemId(undefined)
+  }, [])
+
+  const handleSelectSignal = useCallback(
+    (itemId: string | undefined): void => {
+      setSignalsOpen(false)
+      setRightRailTab('review')
+      if (itemId) handleSelectPlanItem(itemId)
+    },
+    [handleSelectPlanItem],
+  )
+
+  const planReadiness = useMemo(
+    () => inspectPlan(content, planState, reviewMode),
+    [content, planState, reviewMode],
+  )
 
   const handleDone = useCallback(async (): Promise<void> => {
     try {
@@ -487,7 +565,18 @@ export function App(): JSX.Element {
   const decidedCount = annotations.filter(
     (a) => a.status === 'open' && a.state === 'decided',
   ).length
-  const badgeText = `${visibleCount} 批注 · ${decidedCount} 已定`
+  const badgeText =
+    planReadiness.summary.mode === 'annotation-only'
+      ? `${visibleCount} 批注 · ${decidedCount} 已定 · 批注模式`
+      : `${visibleCount} 批注 · ${decidedCount} 已定 · ${planReadiness.summary.resolved}/${planReadiness.summary.total} reviewed`
+  const readinessProgress =
+    planReadiness.summary.total === 0
+      ? 0
+      : Math.round((planReadiness.summary.resolved / planReadiness.summary.total) * 100)
+  const signalCount = planReadiness.summary.issues.length
+  const warningSignalCount = planReadiness.summary.issues.filter(
+    (issue) => issue.severity === 'warning',
+  ).length
 
   // Hide popover while a modal is up — otherwise the popover floats over the
   // backdrop and steals clicks meant for cancel.
@@ -496,8 +585,84 @@ export function App(): JSX.Element {
   return (
     <div className="app">
       <header className="app-header">
-        <strong>scribepad</strong>
-        <span className="path">{path}</span>
+        <div className="app-title">
+          <strong>scribepad</strong>
+          <span>{documentSessionId ? `session ${documentSessionId}` : 'local review'}</span>
+        </div>
+        <div className="app-file">
+          <span className="app-file-label">Document</span>
+          <span className="path">{path}</span>
+        </div>
+        <div className="app-header-metrics" aria-label="文档状态">
+          <span className="metric-pill ready">
+            <b>{readinessProgress}%</b>
+            Readiness
+          </span>
+          <span className="metric-pill">
+            <b>{visibleCount}</b>
+            Comments
+          </span>
+          <span className="metric-pill">
+            <b>{decidedCount}</b>
+            Decided
+          </span>
+          <div className={`signals-menu ${signalsOpen ? 'open' : ''}`}>
+            <button
+              type="button"
+              className={`metric-pill signals-trigger ${signalCount > 0 ? 'has-signals' : ''}`}
+              aria-expanded={signalsOpen}
+              onClick={() => setSignalsOpen((open) => !open)}
+            >
+              <b>{signalCount}</b>
+              Signals
+            </button>
+            {signalsOpen && (
+              <div className="signals-popover" role="menu" aria-label="Review signals">
+                <div className="signals-popover-head">
+                  <strong>Signals</strong>
+                  <span>
+                    {warningSignalCount > 0
+                      ? `${warningSignalCount} warnings`
+                      : 'No blocking warnings'}
+                  </span>
+                </div>
+                {signalCount > 0 ? (
+                  planReadiness.summary.issues.slice(0, 8).map((issue) => (
+                    <button
+                      key={issue.id}
+                      type="button"
+                      className={`signal-item ${issue.severity}`}
+                      onClick={() => handleSelectSignal(issue.itemId)}
+                    >
+                      <span>{issue.severity === 'warning' ? 'Warning' : 'Info'}</span>
+                      <strong>{issue.text}</strong>
+                    </button>
+                  ))
+                ) : (
+                  <div className="signals-empty">当前没有风险提示。</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        <label className="review-style-picker">
+          <span>Review style</span>
+          <select
+            value={reviewPanelVariant}
+            onChange={(event) =>
+              setReviewPanelVariant(event.currentTarget.value as ReviewPanelVariant)
+            }
+          >
+            <option value="executive">1 Executive</option>
+            <option value="spreadsheet">2 Spreadsheet</option>
+            <option value="kanban">3 Kanban</option>
+            <option value="timeline">4 Timeline</option>
+            <option value="command">5 Command</option>
+            <option value="minimal">6 Minimal</option>
+            <option value="inspector">7 Inspector</option>
+            <option value="contrast">8 Contrast</option>
+          </select>
+        </label>
         <span className="badge">{badgeText}</span>
         <SessionActions
           session={session}
@@ -519,22 +684,64 @@ export function App(): JSX.Element {
         <Reader
           content={content}
           annotations={annotations}
+          planItems={planReadiness.items}
           activeId={activeId}
+          activePlanItemId={activePlanItemId}
           onSelectionAnchor={handleSelectionAnchor}
           onCreateAnchor={handleCreateFromAnchor}
           onMarkClick={handleMarkClick}
+          onPlanItemClick={handleSelectPlanItem}
         />
-        <Sidebar
-          annotations={annotations}
-          activeId={activeId}
-          onSubmitInstruction={(id, instruction) => {
-            void handleSubmitInstruction(id, instruction)
-          }}
-          onLock={handleLock}
-          onUnlock={handleUnlock}
-          onDelete={handleDelete}
-          onOpenModal={handleOpenModal}
-        />
+        <aside className="right-rail">
+          <section className="review-shell">
+            <div className="review-tabs" role="tablist" aria-label="右侧面板">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rightRailTab === 'review'}
+                className={rightRailTab === 'review' ? 'active' : ''}
+                onClick={() => setRightRailTab('review')}
+              >
+                Review
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rightRailTab === 'comments'}
+                className={rightRailTab === 'comments' ? 'active' : ''}
+                onClick={() => setRightRailTab('comments')}
+              >
+                Comments <span>{visibleCount}</span>
+              </button>
+            </div>
+            <div className="review-tab-panel" role="tabpanel">
+              {rightRailTab === 'review' ? (
+                <PlanPanel
+                  items={planReadiness.items}
+                  summary={planReadiness.summary}
+                  preferredMode={reviewMode}
+                  variant={reviewPanelVariant}
+                  activeItemId={activePlanItemId}
+                  onModeChange={handleReviewModeChange}
+                  onSelectItem={handleSelectPlanItem}
+                  onToggleLocked={handleTogglePlanItemLocked}
+                />
+              ) : (
+                <Sidebar
+                  annotations={annotations}
+                  activeId={activeId}
+                  onSubmitInstruction={(id, instruction) => {
+                    void handleSubmitInstruction(id, instruction)
+                  }}
+                  onLock={handleLock}
+                  onUnlock={handleUnlock}
+                  onDelete={handleDelete}
+                  onOpenModal={handleOpenModal}
+                />
+              )}
+            </div>
+          </section>
+        </aside>
       </main>
 
       {showPopover &&

@@ -24,19 +24,24 @@
  */
 import { useEffect, useRef } from 'react'
 import type { Annotation, AnnotationState, Anchor } from '../../types/annotation'
+import type { PlanItem } from '../../types/plan'
 import { renderMarkdown } from '../lib/markdown'
 import { domSelectionToAnchor, locateAnchorInDom } from '../lib/anchor'
 
 export interface ReaderProps {
   content: string
   annotations: Annotation[]
+  planItems?: PlanItem[]
   activeId?: string | undefined
+  activePlanItemId?: string | undefined
   /** Drag-select reported a fresh anchor (or null when selection cleared). */
   onSelectionAnchor: (anchor: Anchor | null) => void
   /** Click landed on a bare sentence span. */
   onCreateAnchor: (anchor: Anchor) => void
   /** Click landed inside a `<mark data-anno-id>`. */
   onMarkClick: (id: string) => void
+  /** Click landed on a plan status rail marker. */
+  onPlanItemClick?: (id: string) => void
 }
 
 /**
@@ -76,6 +81,7 @@ export function Reader(props: ReaderProps): JSX.Element {
   const onSelectionAnchorRef = useRef(props.onSelectionAnchor)
   const onCreateAnchorRef = useRef(props.onCreateAnchor)
   const onMarkClickRef = useRef(props.onMarkClick)
+  const onPlanItemClickRef = useRef(props.onPlanItemClick)
   useEffect(() => {
     onSelectionAnchorRef.current = props.onSelectionAnchor
   }, [props.onSelectionAnchor])
@@ -85,6 +91,9 @@ export function Reader(props: ReaderProps): JSX.Element {
   useEffect(() => {
     onMarkClickRef.current = props.onMarkClick
   }, [props.onMarkClick])
+  useEffect(() => {
+    onPlanItemClickRef.current = props.onPlanItemClick
+  }, [props.onPlanItemClick])
 
   const baseHtml = renderMarkdown(props.content)
   baseHtmlRef.current = baseHtml
@@ -142,7 +151,39 @@ export function Reader(props: ReaderProps): JSX.Element {
         }
       }
     }
-  }, [baseHtml, props.annotations, props.activeId])
+
+    for (const item of props.planItems ?? []) {
+      const block = root.querySelector<HTMLElement>(`[data-block-id="${cssEscape(item.blockId)}"]`)
+      if (!block) continue
+      const blockLeft = block.getBoundingClientRect().left - root.getBoundingClientRect().left
+      const railX = Number.parseFloat(window.getComputedStyle(root).paddingLeft) - 22
+      block.style.setProperty('--plan-line-left', `${railX - blockLeft}px`)
+      block.style.setProperty('--plan-marker-left', `${railX - 94 - blockLeft}px`)
+      block.classList.add('plan-block')
+      if (props.activePlanItemId === item.id) block.classList.add('plan-block-active')
+      block.setAttribute('data-plan-item-id', item.id)
+      block.setAttribute('data-plan-kind', item.kind)
+      block.setAttribute('data-plan-status', item.status)
+
+      const marker = document.createElement('button')
+      marker.type = 'button'
+      marker.className = `plan-rail-marker ${item.kind} ${item.status}`
+      marker.setAttribute('data-plan-rail-id', item.id)
+      marker.setAttribute('aria-label', `${item.title}: ${item.text}`)
+      const label = document.createElement('span')
+      label.className = 'plan-rail-label'
+      label.textContent = planMarkerText(item)
+      marker.append(label)
+      if (item.status === 'locked') {
+        const lock = document.createElement('span')
+        lock.className = 'plan-rail-lock'
+        lock.setAttribute('aria-hidden', 'true')
+        lock.textContent = '🔒'
+        marker.append(lock)
+      }
+      block.prepend(marker)
+    }
+  }, [baseHtml, props.annotations, props.activeId, props.planItems, props.activePlanItemId])
 
   // ── selectionchange + visual snap to sentence boundaries ────────────────
   useEffect(() => {
@@ -214,6 +255,11 @@ export function Reader(props: ReaderProps): JSX.Element {
     let blockEl: HTMLElement | null = null
 
     while (el && el !== e.currentTarget) {
+      if (el.hasAttribute('data-plan-rail-id')) {
+        const id = el.getAttribute('data-plan-rail-id')
+        if (id) onPlanItemClickRef.current?.(id)
+        return
+      }
       if (!markEl && el.tagName === 'MARK' && el.hasAttribute('data-anno-id')) {
         markEl = el
       }
@@ -287,4 +333,15 @@ export function Reader(props: ReaderProps): JSX.Element {
       dangerouslySetInnerHTML={{ __html: baseHtml }}
     />
   )
+}
+
+function cssEscape(value: string): string {
+  if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value)
+  return value.replace(/"/g, '\\"')
+}
+
+function planMarkerText(item: PlanItem): string {
+  if (item.status === 'locked') return 'locked'
+  if (item.status === 'stale') return 'stale'
+  return 'default'
 }
