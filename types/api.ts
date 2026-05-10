@@ -4,6 +4,7 @@
  */
 
 import type { Annotation } from './annotation.js'
+import type { PlanItemState } from './plan.js'
 
 // GET /api/file
 export interface FileResponse {
@@ -28,6 +29,16 @@ export interface AnnotationsResponse {
 // POST /api/annotations
 export interface AnnotationsRequest {
   annotations: Annotation[]
+}
+
+// GET /api/plan-state
+export interface PlanStateResponse {
+  planState: PlanItemState[]
+}
+
+// POST /api/plan-state
+export interface PlanStateRequest {
+  planState: PlanItemState[]
 }
 
 // POST /api/rewrite

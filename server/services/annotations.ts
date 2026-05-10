@@ -17,6 +17,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, basename, join } from 'node:path'
 import type { Annotation, AnnotationState, Sidecar } from '../../types/annotation.js'
+import type { PlanItemState } from '../../types/plan.js'
 
 export function sidecarPath(docPath: string): string {
   return join(dirname(docPath), '.' + basename(docPath) + '.annotations.json')
@@ -62,11 +63,20 @@ export function validateStateTransition(
 }
 
 export async function readAnnotations(docPath: string): Promise<Annotation[]> {
-  const p = sidecarPath(docPath)
-  if (!existsSync(p)) return []
-  const raw = await readFile(p, 'utf8')
-  const data = JSON.parse(raw) as Sidecar
+  const data = await readSidecar(docPath)
   return data.annotations ?? []
+}
+
+export async function readPlanState(docPath: string): Promise<PlanItemState[]> {
+  const data = await readSidecar(docPath)
+  return data.planState ?? []
+}
+
+async function readSidecar(docPath: string): Promise<Sidecar> {
+  const p = sidecarPath(docPath)
+  if (!existsSync(p)) return { version: 3, annotations: [] }
+  const raw = await readFile(p, 'utf8')
+  return JSON.parse(raw) as Sidecar
 }
 
 export async function writeAnnotations(docPath: string, annotations: Annotation[]): Promise<void> {
@@ -86,6 +96,15 @@ export async function writeAnnotations(docPath: string, annotations: Annotation[
     }
   }
 
-  const data: Sidecar = { version: 3, annotations }
+  const existingData = await readSidecar(docPath)
+  const data: Sidecar = { ...existingData, version: 3, annotations }
+  if (existingData.planState) data.planState = existingData.planState
+  await writeFile(sidecarPath(docPath), JSON.stringify(data, null, 2), 'utf8')
+}
+
+export async function writePlanState(docPath: string, planState: PlanItemState[]): Promise<void> {
+  const existingData = await readSidecar(docPath)
+  const data: Sidecar = { ...existingData, version: 3, planState }
+  data.annotations = existingData.annotations ?? []
   await writeFile(sidecarPath(docPath), JSON.stringify(data, null, 2), 'utf8')
 }

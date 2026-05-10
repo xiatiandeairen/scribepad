@@ -1,3 +1,5 @@
+import type { PlanItemState } from './plan.js'
+
 /**
  * Annotation v0.2 schema — block-scoped, sentence-level anchor.
  *
@@ -75,4 +77,5 @@ export interface Annotation {
 export interface Sidecar {
   version: 3
   annotations: Annotation[]
+  planState?: PlanItemState[]
 }

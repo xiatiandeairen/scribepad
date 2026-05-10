@@ -11,6 +11,8 @@ import type {
   HeartbeatSessionRequest,
   OpenSessionRequest,
   OpenSessionResponse,
+  PlanStateRequest,
+  PlanStateResponse,
   RewriteRequest,
   RewriteResponse,
   SaveRequest,
@@ -94,6 +96,18 @@ export function sessionsRoute(ctx: AppContext) {
   app.post('/sessions/:sessionId/annotations', async (c) => {
     const req = (await c.req.json()) as AnnotationsRequest
     await ctx.sessionManager.writeAnnotations(c.req.param('sessionId'), req.annotations)
+    return c.json({ ok: true })
+  })
+
+  app.get('/sessions/:sessionId/plan-state', async (c) => {
+    const planState = await ctx.sessionManager.readPlanState(c.req.param('sessionId'))
+    const body: PlanStateResponse = { planState }
+    return c.json(body)
+  })
+
+  app.post('/sessions/:sessionId/plan-state', async (c) => {
+    const req = (await c.req.json()) as PlanStateRequest
+    await ctx.sessionManager.writePlanState(c.req.param('sessionId'), req.planState)
     return c.json({ ok: true })
   })
 

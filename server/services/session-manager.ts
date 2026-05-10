@@ -3,10 +3,17 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import type { Annotation } from '../../types/annotation.js'
 import type { SessionResponse } from '../../types/api.js'
-import { readAnnotations, sidecarPath, writeAnnotations } from './annotations.js'
+import {
+  readAnnotations,
+  readPlanState,
+  sidecarPath,
+  writeAnnotations,
+  writePlanState,
+} from './annotations.js'
 import { readDocument, saveDocument } from './document.js'
 import { rewriteItems } from './rewrite.js'
 import type { RewriteItem, RewriteResultEntry } from '../../types/api.js'
+import type { PlanItemState } from '../../types/plan.js'
 
 export interface ClientState {
   id: string
@@ -148,6 +155,19 @@ export class SessionManager {
   async writeAnnotations(id: string, annotations: Annotation[]): Promise<void> {
     const session = this.getSession(id)
     await writeAnnotations(session.filePath, annotations)
+    session.dirty = true
+    this.touch(session)
+  }
+
+  async readPlanState(id: string): Promise<PlanItemState[]> {
+    const session = this.getSession(id)
+    this.touch(session)
+    return readPlanState(session.filePath)
+  }
+
+  async writePlanState(id: string, planState: PlanItemState[]): Promise<void> {
+    const session = this.getSession(id)
+    await writePlanState(session.filePath, planState)
     session.dirty = true
     this.touch(session)
   }
