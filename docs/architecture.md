@@ -35,9 +35,11 @@ src/
 ├── components/           # React 组件
 │   ├── Reader.tsx        # markdown 渲染 + 选区交互
 │   ├── Sidebar.tsx       # 批注列表 + 状态展示
-│   └── DiffModal.tsx     # AI 改写 diff 预览
+│   ├── DiffModal.tsx     # AI 改写 diff 预览
+│   └── PlanPanel.tsx     # plan review 右栏
 ├── lib/                  # 纯函数,无 React,无 IO
 │   ├── markdown.ts       # mdast 渲染 / anchor 计算
+│   ├── plan-inspector.ts # plan 信息点抽取 + readiness summary
 │   ├── anchor.ts         # 选区 ↔ 源码 offset
 │   └── api.ts            # fetch 封装
 └── styles/main.css
@@ -52,6 +54,7 @@ server/
 ├── routes/               # HTTP 边界(参数校验,调 services)
 │   ├── file.ts
 │   ├── annotations.ts
+│   ├── plan-state.ts
 │   └── rewrite.ts
 ├── services/             # 领域逻辑(可单测)
 │   ├── document.ts
@@ -66,6 +69,7 @@ server/
 ```
 types/
 ├── annotation.ts         # Annotation, Anchor, AuditEntry, Sidecar
+├── plan.ts               # PlanItem / PlanItemState / ReviewMode / readiness summary
 ├── document.ts           # DocumentFile
 └── api.ts                # FileResponse / RewriteRequest / etc.
 ```
@@ -98,6 +102,18 @@ types/
 | 已决定段防漂移 | `server/services/rewrite.ts` 在 prompt 构造前过滤 `state=decided` 的段落 |
 | AuditEntry 历史 | `server/services/annotations.ts` 在每次 rewrite/state-change 时 append |
 | Reader / Sidebar / DiffModal 组件 | 新建 `src/components/*.tsx`,从 v0.1 MVP 重构思路恢复(不复制代码) |
+
+## v0.2.0 新增 Plan Readiness
+
+| 工作项 | 加在哪 |
+|---|---|
+| plan 信息点抽取 | `src/lib/plan-inspector.ts`，纯函数，不做 IO |
+| readiness 结构化展示 | `src/components/PlanPanel.tsx`，由 `App.tsx` 注入信息点、mode 和状态回调 |
+| 正文状态栏 | `src/components/Reader.tsx` 根据 `PlanItem` 在原文块左侧渲染 status rail |
+| 信息点状态持久化 | sidecar `planState` 字段，类型在 `types/plan.ts` |
+| plan state API | `server/routes/plan-state.ts` + session-scoped `/api/sessions/:id/plan-state` |
+
+约束：0.2.0 的状态表示用户对信息点的处理状态，不是 AI 判断真伪；AI auto-audit 仍放 v0.3+。文档结构较弱时必须降级到 lightweight 或 annotation-only，避免把轻量 plan 当完整执行计划检查。
 
 ## v0.3 候选方向(由 v0.2 dogfood gate 决定)
 
