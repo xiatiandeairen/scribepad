@@ -27,7 +27,7 @@ import type { Annotation, Anchor, AnnotationStatus } from '../types/annotation'
 import { Reader } from './components/Reader'
 import { Sidebar } from './components/Sidebar'
 import { DiffModal } from './components/DiffModal'
-import { PlanPanel, type ReviewPanelVariant } from './components/PlanPanel'
+import { PlanPanel } from './components/PlanPanel'
 import { SessionActions } from './components/SessionActions'
 import {
   closeSession,
@@ -50,7 +50,7 @@ import { remapAnchorsAfterRewrite, resolveAnchorToSourceRange } from './lib/anch
 import { renderMarkdown } from './lib/markdown'
 import { inspectPlan } from './lib/plan-inspector'
 import type { SessionResponse } from '../types/api'
-import type { PlanItem, PlanItemState, PlanItemStatus, ReviewMode } from '../types/plan'
+import type { PlanItem, PlanItemState, PlanItemStatus } from '../types/plan'
 
 /** Generate a sortable, collision-resistant id without bringing in a uuid dep. */
 function makeAnnotationId(): string {
@@ -68,6 +68,22 @@ function cssEscape(value: string): string {
   return value.replace(/"/g, '\\"')
 }
 
+const SIGNAL_SECTION_LABELS: Partial<Record<PlanItem['kind'], string>> = {
+  goal: 'Goal',
+  scope: 'Scope',
+  behavior: 'Behavior',
+  decision: 'Decisions',
+  risk: 'Risks',
+  task: 'Tasks',
+  verification: 'Verification',
+}
+
+type HeaderSignal = {
+  id: string
+  label: string
+  severity: 'warning' | 'info'
+}
+
 export function App(): JSX.Element {
   const documentSessionId = useMemo(() => sessionIdFromLocation(), [])
   const clientIdRef = useRef<string | null>(null)
@@ -75,11 +91,8 @@ export function App(): JSX.Element {
   const [path, setPath] = useState<string>('')
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [planState, setPlanState] = useState<PlanItemState[]>([])
-  const [reviewMode, setReviewMode] = useState<ReviewMode>('auto')
-  const [reviewPanelVariant, setReviewPanelVariant] = useState<ReviewPanelVariant>('executive')
   const [activePlanItemId, setActivePlanItemId] = useState<string | undefined>(undefined)
   const [rightRailTab, setRightRailTab] = useState<'review' | 'comments'>('review')
-  const [signalsOpen, setSignalsOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [selectionAnchor, setSelectionAnchor] = useState<Anchor | null>(null)
   const [selectionRect, setSelectionRect] = useState<DOMRect | null>(null)
@@ -430,24 +443,7 @@ export function App(): JSX.Element {
     })
   }, [])
 
-  const handleReviewModeChange = useCallback((mode: ReviewMode): void => {
-    setReviewMode(mode)
-    setActivePlanItemId(undefined)
-  }, [])
-
-  const handleSelectSignal = useCallback(
-    (itemId: string | undefined): void => {
-      setSignalsOpen(false)
-      setRightRailTab('review')
-      if (itemId) handleSelectPlanItem(itemId)
-    },
-    [handleSelectPlanItem],
-  )
-
-  const planReadiness = useMemo(
-    () => inspectPlan(content, planState, reviewMode),
-    [content, planState, reviewMode],
-  )
+  const planReadiness = useMemo(() => inspectPlan(content, planState, 'auto'), [content, planState])
 
   const handleDone = useCallback(async (): Promise<void> => {
     try {
@@ -562,21 +558,35 @@ export function App(): JSX.Element {
     decidingAnnotation.state === 'discussed'
 
   const visibleCount = annotations.filter((a) => a.status === 'open').length
-  const decidedCount = annotations.filter(
-    (a) => a.status === 'open' && a.state === 'decided',
-  ).length
   const badgeText =
     planReadiness.summary.mode === 'annotation-only'
-      ? `${visibleCount} 批注 · ${decidedCount} 已定 · 批注模式`
-      : `${visibleCount} 批注 · ${decidedCount} 已定 · ${planReadiness.summary.resolved}/${planReadiness.summary.total} reviewed`
+      ? `${visibleCount} 批注 · 批注模式`
+      : `${visibleCount} 批注 · ${planReadiness.summary.resolved}/${planReadiness.summary.total} reviewed`
   const readinessProgress =
     planReadiness.summary.total === 0
       ? 0
       : Math.round((planReadiness.summary.resolved / planReadiness.summary.total) * 100)
-  const signalCount = planReadiness.summary.issues.length
-  const warningSignalCount = planReadiness.summary.issues.filter(
-    (issue) => issue.severity === 'warning',
-  ).length
+  const headerSignals = planReadiness.items
+    .filter((item) => SIGNAL_SECTION_LABELS[item.kind])
+    .filter((item) => item.status === 'open' || item.status === 'stale')
+    .reduce<HeaderSignal[]>((signals, item) => {
+      const section = SIGNAL_SECTION_LABELS[item.kind]
+      if (!section) return signals
+      const existing = signals.find((signal) => signal.id === item.kind)
+      const severity = item.status === 'stale' || item.kind === 'risk' ? 'warning' : 'info'
+      if (existing) {
+        if (severity === 'warning') existing.severity = 'warning'
+        return signals
+      }
+      signals.push({
+        id: item.kind,
+        label: `${section} ${item.status === 'stale' ? '需复核' : '未确认'}`,
+        severity,
+      })
+      return signals
+    }, [])
+  const signalCount = headerSignals.length
+  const warningSignalCount = headerSignals.filter((signal) => signal.severity === 'warning').length
 
   // Hide popover while a modal is up — otherwise the popover floats over the
   // backdrop and steals clicks meant for cancel.
@@ -602,67 +612,41 @@ export function App(): JSX.Element {
             <b>{visibleCount}</b>
             Comments
           </span>
-          <span className="metric-pill">
-            <b>{decidedCount}</b>
-            Decided
-          </span>
-          <div className={`signals-menu ${signalsOpen ? 'open' : ''}`}>
+          <div className="signals-menu">
             <button
               type="button"
               className={`metric-pill signals-trigger ${signalCount > 0 ? 'has-signals' : ''}`}
-              aria-expanded={signalsOpen}
-              onClick={() => setSignalsOpen((open) => !open)}
+              aria-describedby="header-signals-popover"
             >
               <b>{signalCount}</b>
               Signals
             </button>
-            {signalsOpen && (
-              <div className="signals-popover" role="menu" aria-label="Review signals">
-                <div className="signals-popover-head">
-                  <strong>Signals</strong>
-                  <span>
-                    {warningSignalCount > 0
-                      ? `${warningSignalCount} warnings`
-                      : 'No blocking warnings'}
-                  </span>
-                </div>
-                {signalCount > 0 ? (
-                  planReadiness.summary.issues.slice(0, 8).map((issue) => (
-                    <button
-                      key={issue.id}
-                      type="button"
-                      className={`signal-item ${issue.severity}`}
-                      onClick={() => handleSelectSignal(issue.itemId)}
-                    >
-                      <span>{issue.severity === 'warning' ? 'Warning' : 'Info'}</span>
-                      <strong>{issue.text}</strong>
-                    </button>
-                  ))
-                ) : (
-                  <div className="signals-empty">当前没有风险提示。</div>
-                )}
+            <div
+              id="header-signals-popover"
+              className="signals-popover"
+              role="tooltip"
+              aria-label="Review signals"
+            >
+              <div className="signals-popover-head">
+                <strong>Signals</strong>
+                <span>
+                  {warningSignalCount > 0
+                    ? `${warningSignalCount} warnings`
+                    : 'No blocking warnings'}
+                </span>
               </div>
-            )}
+              {signalCount > 0 ? (
+                headerSignals.slice(0, 8).map((signal) => (
+                  <div key={signal.id} className={`signal-item ${signal.severity}`}>
+                    <strong>{signal.label}</strong>
+                  </div>
+                ))
+              ) : (
+                <div className="signals-empty">Review 面板当前没有待处理项。</div>
+              )}
+            </div>
           </div>
         </div>
-        <label className="review-style-picker">
-          <span>Review style</span>
-          <select
-            value={reviewPanelVariant}
-            onChange={(event) =>
-              setReviewPanelVariant(event.currentTarget.value as ReviewPanelVariant)
-            }
-          >
-            <option value="executive">1 Executive</option>
-            <option value="spreadsheet">2 Spreadsheet</option>
-            <option value="kanban">3 Kanban</option>
-            <option value="timeline">4 Timeline</option>
-            <option value="command">5 Command</option>
-            <option value="minimal">6 Minimal</option>
-            <option value="inspector">7 Inspector</option>
-            <option value="contrast">8 Contrast</option>
-          </select>
-        </label>
         <span className="badge">{badgeText}</span>
         <SessionActions
           session={session}
@@ -719,10 +703,7 @@ export function App(): JSX.Element {
                 <PlanPanel
                   items={planReadiness.items}
                   summary={planReadiness.summary}
-                  preferredMode={reviewMode}
-                  variant={reviewPanelVariant}
                   activeItemId={activePlanItemId}
-                  onModeChange={handleReviewModeChange}
                   onSelectItem={handleSelectPlanItem}
                   onToggleLocked={handleTogglePlanItemLocked}
                 />

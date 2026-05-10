@@ -100,7 +100,7 @@ test.describe('P0 product flows', () => {
     expect(response?.status()).toBeLessThan(400)
 
     await waitForReaderReady(page)
-    await expect(page.locator('.app-header strong')).toHaveText('scribepad')
+    await expect(page.locator('.app-title strong')).toHaveText('scribepad')
     await expect(page.locator('.app-header .path')).toContainText('sample.md')
     await expect(page.locator('.reader h1')).toBeVisible()
     await expect(page.locator('.reader h2').first()).toBeVisible()
@@ -142,7 +142,7 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('mark.anno.draft')).toHaveText(selected)
     await expect(page.locator('.anno-card')).toHaveCount(1)
     await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
-    await expect(page.locator('.metric-pill').nth(2).locator('b')).toHaveText('0')
+    await expect(page.locator('.app-header')).not.toContainText('Decided')
 
     await page.reload()
     await waitForReaderReady(page)
@@ -152,7 +152,7 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('.anno-card')).not.toContainText(selected)
     await expect(page.locator('.anno-card textarea[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
     await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
-    await expect(page.locator('.metric-pill').nth(2).locator('b')).toHaveText('0')
+    await expect(page.locator('.app-header')).not.toContainText('Decided')
   })
 
   test('P0.3 AI 改写进入 thinking/deciding，打开 diff 后接受并写回文档', async ({ page }) => {
@@ -221,7 +221,7 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('mark.anno.decided')).toHaveText(selected)
     await expect(page.locator('.anno-card.decided')).toContainText('已锁定')
     await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
-    await expect(page.locator('.metric-pill').nth(2).locator('b')).toHaveText('1')
+    await expect(page.locator('.app-header')).not.toContainText('Decided')
 
     await page.reload()
     await waitForReaderReady(page)
@@ -230,7 +230,7 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('mark.anno.decided')).toHaveText(selected)
     await expect(page.locator('.anno-card.decided')).toContainText('已锁定')
     await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
-    await expect(page.locator('.metric-pill').nth(2).locator('b')).toHaveText('1')
+    await expect(page.locator('.app-header')).not.toContainText('Decided')
   })
 
   test('P0.6 rewrite 失败会展示错误，并回到可重试状态', async ({ page }) => {

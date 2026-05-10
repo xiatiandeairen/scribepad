@@ -8,17 +8,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const SAMPLE_PATH = resolve(__dirname, '../../sample.md')
 let sampleBaseline = ''
 
-const REVIEW_STYLES = [
-  'executive',
-  'spreadsheet',
-  'kanban',
-  'timeline',
-  'command',
-  'minimal',
-  'inspector',
-  'contrast',
-] as const
-
 async function lockedPlanStateCount(page: Page): Promise<number> {
   return page.evaluate(async () => {
     const res = await fetch('/api/plan-state')
@@ -65,7 +54,7 @@ test.describe('Review UI', () => {
     clearSidecar()
   })
 
-  test('all review styles render without console errors', async ({ page }) => {
+  test('review panel renders without console errors', async ({ page }) => {
     const consoleErrors: string[] = []
     page.on('console', (message) => {
       if (message.type() !== 'error') return
@@ -78,16 +67,15 @@ test.describe('Review UI', () => {
     await page.goto('/')
     await waitForReaderReady(page)
 
-    for (const style of REVIEW_STYLES) {
-      await page.locator('.review-style-picker select').selectOption(style)
-      await expect(page.locator('.plan-panel')).toBeVisible()
-      await expect(page.locator('.review-tab-panel')).not.toBeEmpty()
-    }
+    await expect(page.locator('.review-style-picker')).toHaveCount(0)
+    await expect(page.locator('.plan-panel')).toBeVisible()
+    await expect(page.locator('.executive-outline')).toBeVisible()
+    await expect(page.locator('.review-tab-panel')).not.toBeEmpty()
 
     expect(consoleErrors).toEqual([])
   })
 
-  test('all review styles avoid horizontal overflow on desktop and mobile', async ({ page }) => {
+  test('review panel avoids horizontal overflow on desktop and mobile', async ({ page }) => {
     for (const viewport of [
       { width: 1440, height: 980 },
       { width: 390, height: 844 },
@@ -96,15 +84,12 @@ test.describe('Review UI', () => {
       await page.goto('/')
       await waitForReaderReady(page)
 
-      for (const style of REVIEW_STYLES) {
-        await page.locator('.review-style-picker select').selectOption(style)
-        await expect(page.locator('.plan-panel')).toBeVisible()
-        const overflow = await page.evaluate(() => ({
-          scrollWidth: document.documentElement.scrollWidth,
-          clientWidth: document.documentElement.clientWidth,
-        }))
-        expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth)
-      }
+      await expect(page.locator('.plan-panel')).toBeVisible()
+      const overflow = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }))
+      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth)
     }
   })
 
@@ -120,21 +105,6 @@ test.describe('Review UI', () => {
     await waitForReaderReady(page)
     await expect(page.locator('.executive-point.locked').first()).toBeVisible()
     await expect(page.locator('.plan-rail-marker.locked').first()).toBeVisible()
-  })
-
-  test('timeline step locks and persists', async ({ page }) => {
-    await page.goto('/')
-    await waitForReaderReady(page)
-    await page.locator('.review-style-picker select').selectOption('timeline')
-
-    await expect(page.locator('.timeline-step').first()).toBeVisible()
-    await page.locator('.timeline-step').first().click()
-    await expect.poll(() => lockedPlanStateCount(page)).toBe(1)
-
-    await page.reload()
-    await waitForReaderReady(page)
-    await page.locator('.review-style-picker select').selectOption('timeline')
-    await expect(page.locator('.timeline-step.locked').first()).toBeVisible()
   })
 
   test('locked plan item becomes stale after source text changes and can be relocked', async ({
@@ -156,13 +126,16 @@ test.describe('Review UI', () => {
     await expect.poll(() => lockedPlanStateCount(page)).toBe(1)
   })
 
-  test('signals popover is usable on mobile and can focus a linked item', async ({ page }) => {
+  test('signals tooltip appears on hover and matches review sections', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
     await waitForReaderReady(page)
 
-    await page.locator('.signals-trigger').click()
+    await expect(page.locator('.app-header')).not.toContainText('Decided')
     const popover = page.locator('.signals-popover')
+    await expect(popover).not.toBeVisible()
+
+    await page.locator('.signals-trigger').hover()
     await expect(popover).toBeVisible()
     await expect
       .poll(async () =>
@@ -173,8 +146,11 @@ test.describe('Review UI', () => {
       )
       .toBe(true)
 
-    await page.locator('.signal-item', { hasText: '尚未锁定' }).first().click()
-    await expect(popover).not.toBeVisible()
-    await expect(page.locator('.plan-block-active')).toBeVisible()
+    await expect(page.locator('.signal-item').first()).toContainText(/未确认|需复核/)
+    const firstSignalSection =
+      ((await page.locator('.signal-item strong').first().textContent()) ?? '').split(' ')[0] ?? ''
+    await expect(
+      page.locator('.executive-section-title', { hasText: firstSignalSection }).first(),
+    ).toBeVisible()
   })
 })
