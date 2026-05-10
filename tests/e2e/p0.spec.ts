@@ -104,8 +104,34 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('.app-header .path')).toContainText('sample.md')
     await expect(page.locator('.reader h1')).toBeVisible()
     await expect(page.locator('.reader h2').first()).toBeVisible()
+    await expect(page.locator('.plan-panel')).toBeVisible()
+    await expect(page.locator('.executive-outline')).toBeVisible()
+    await expect(page.locator('.executive-point').first()).toBeVisible()
+    await expect(page.locator('.plan-rail-marker').first()).toBeVisible()
+    await page.getByRole('tab', { name: /Comments/ }).click()
     await expect(page.locator('.sidebar .empty')).toBeVisible()
-    await expect(page.locator('.app-header .badge')).toHaveText('0 批注 · 0 已定')
+  })
+
+  test('P0.1b plan 信息点可以点击锁定，并在刷新后保持', async ({ page }) => {
+    await page.goto('/')
+    await waitForReaderReady(page)
+
+    await page.locator('.executive-point').first().click()
+
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const res = await fetch('/api/plan-state')
+          const body = (await res.json()) as { planState: Array<{ status: string }> }
+          return body.planState.filter((state) => state.status === 'locked').length
+        }),
+      )
+      .toBe(1)
+
+    await page.reload()
+    await waitForReaderReady(page)
+    await expect(page.locator('.executive-point.locked').first()).toBeVisible()
+    await expect(page.locator('.plan-rail-marker.locked').first()).toBeVisible()
   })
 
   test('P0.2 选区可以创建 draft 批注，并在刷新后从 sidecar 恢复', async ({ page }) => {
@@ -115,15 +141,18 @@ test.describe('P0 product flows', () => {
     const selected = await createAnnotation(page, { substring: 'session token' })
     await expect(page.locator('mark.anno.draft')).toHaveText(selected)
     await expect(page.locator('.anno-card')).toHaveCount(1)
-    await expect(page.locator('.app-header .badge')).toHaveText('1 批注 · 0 已定')
+    await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
+    await expect(page.locator('.metric-pill').nth(2).locator('b')).toHaveText('0')
 
     await page.reload()
     await waitForReaderReady(page)
+    await page.getByRole('tab', { name: /Comments/ }).click()
 
     await expect(page.locator('mark.anno.draft')).toHaveText(selected)
     await expect(page.locator('.anno-card')).not.toContainText(selected)
     await expect(page.locator('.anno-card textarea[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
-    await expect(page.locator('.app-header .badge')).toHaveText('1 批注 · 0 已定')
+    await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
+    await expect(page.locator('.metric-pill').nth(2).locator('b')).toHaveText('0')
   })
 
   test('P0.3 AI 改写进入 thinking/deciding，打开 diff 后接受并写回文档', async ({ page }) => {
@@ -187,17 +216,21 @@ test.describe('P0 product flows', () => {
     // product shortcut that dismisses the active draft before React refetches.
     await page.reload()
     await waitForReaderReady(page)
+    await page.getByRole('tab', { name: /Comments/ }).click()
 
     await expect(page.locator('mark.anno.decided')).toHaveText(selected)
     await expect(page.locator('.anno-card.decided')).toContainText('已锁定')
-    await expect(page.locator('.app-header .badge')).toHaveText('1 批注 · 1 已定')
+    await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
+    await expect(page.locator('.metric-pill').nth(2).locator('b')).toHaveText('1')
 
     await page.reload()
     await waitForReaderReady(page)
+    await page.getByRole('tab', { name: /Comments/ }).click()
 
     await expect(page.locator('mark.anno.decided')).toHaveText(selected)
     await expect(page.locator('.anno-card.decided')).toContainText('已锁定')
-    await expect(page.locator('.app-header .badge')).toHaveText('1 批注 · 1 已定')
+    await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
+    await expect(page.locator('.metric-pill').nth(2).locator('b')).toHaveText('1')
   })
 
   test('P0.6 rewrite 失败会展示错误，并回到可重试状态', async ({ page }) => {

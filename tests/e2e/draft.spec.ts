@@ -39,6 +39,7 @@ test.describe('draft flow', () => {
     const mark = page.locator('mark.anno.draft')
     await expect(mark).toBeVisible()
     await expect(mark).toHaveText(selected)
+    await expect(page.locator('.anno-tail')).toHaveCount(0)
   })
 
   test('click sentence → creates whole-sentence draft annotation directly', async ({ page }) => {

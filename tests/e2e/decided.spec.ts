@@ -41,6 +41,7 @@ test.describe('decided flow + 防漂移', () => {
     })
     await page.reload()
     await waitForReaderReady(page)
+    await page.getByRole('tab', { name: /Comments/ }).click()
 
     const card = page.locator('.anno-card.decided')
     await expect(card).toBeVisible()

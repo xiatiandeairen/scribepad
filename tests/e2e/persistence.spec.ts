@@ -30,6 +30,7 @@ test.describe('sidecar persistence', () => {
     // Reload — App refetches /api/annotations from the sidecar JSON.
     await page.reload()
     await waitForReaderReady(page)
+    await page.getByRole('tab', { name: /Comments/ }).click()
 
     // Annotation card should re-appear without duplicating the selected text.
     const card = page.locator('.anno-card').first()

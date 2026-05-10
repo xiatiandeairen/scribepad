@@ -145,6 +145,10 @@ export async function createAnnotation(
   opts: { paragraphSelector?: string; substring?: string } = {},
 ): Promise<string> {
   await expect(page.locator('.reader p').first()).toBeVisible()
+  const commentsTab = page.getByRole('tab', { name: /Comments/ })
+  if ((await commentsTab.getAttribute('aria-selected')) !== 'true') {
+    await commentsTab.click()
+  }
   const selected = await selectTextInReader(page, opts)
   await page.locator('.reader').dispatchEvent('pointerup', {
     pointerType: 'mouse',
