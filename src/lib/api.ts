@@ -10,6 +10,9 @@
 
 import type { Annotation } from '../../types/annotation.js'
 import type {
+  AiConfig,
+  AiConfigResponse,
+  AiStatusResponse,
   AnnotationsResponse,
   ConnectSessionResponse,
   DoneSessionResponse,
@@ -27,10 +30,11 @@ import type {
 import type { PlanItemState } from '../../types/plan.js'
 
 async function parseOrThrow<T>(res: Response): Promise<T> {
+  const text = await res.text()
   if (!res.ok) {
     let message = res.statusText
     try {
-      const body = (await res.json()) as ErrorResponse
+      const body = JSON.parse(text) as ErrorResponse
       if (body && typeof body.error === 'string' && body.error) {
         message = body.error
       }
@@ -39,7 +43,11 @@ async function parseOrThrow<T>(res: Response): Promise<T> {
     }
     throw new Error(message)
   }
-  return (await res.json()) as T
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error(`API returned non-JSON response for ${res.url}`)
+  }
 }
 
 function scoped(path: string, sessionId?: string): string {
@@ -116,6 +124,30 @@ export async function normalizeReviewDocument(
     body: JSON.stringify({ fullDoc }),
   })
   return parseOrThrow<ReviewNormalizeResponse>(res)
+}
+
+export async function getAiConfig(): Promise<AiConfigResponse> {
+  const res = await fetch('/api/ai/config')
+  return parseOrThrow<AiConfigResponse>(res)
+}
+
+export async function saveAiConfig(config: AiConfig): Promise<AiConfigResponse> {
+  const res = await fetch('/api/ai/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config }),
+  })
+  return parseOrThrow<AiConfigResponse>(res)
+}
+
+export async function getAiStatus(): Promise<AiStatusResponse> {
+  const res = await fetch('/api/ai/status')
+  return parseOrThrow<AiStatusResponse>(res)
+}
+
+export async function testAiConfig(): Promise<AiStatusResponse> {
+  const res = await fetch('/api/ai/test', { method: 'POST' })
+  return parseOrThrow<AiStatusResponse>(res)
 }
 
 export async function getSession(): Promise<SessionResponse> {

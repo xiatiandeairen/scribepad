@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG, loadConfig } from '../../server/config'
+import { DEFAULT_CONFIG, loadConfig, writeProjectLocalAiConfig } from '../../server/config'
 
 async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'scribepad-config-'))
@@ -55,6 +55,43 @@ describe('loadConfig', () => {
 
     expect(config.activeIdleMs).toBe(400_000)
     expect(config.host).toBe('localhost')
+  })
+
+  it('merges AI provider config with defaults', async () => {
+    const repoRoot = await tempDir()
+    await mkdir(join(repoRoot, '.scribepad'), { recursive: true })
+    await writeFile(
+      join(repoRoot, '.scribepad', 'config.local.json'),
+      '{"ai":{"provider":"claude-code-cli","claude":{"command":"claude-beta"}}}',
+      'utf8',
+    )
+
+    const config = await loadConfig({ repoRoot, env: {} })
+
+    expect(config.ai.provider).toBe('claude-code-cli')
+    expect(config.ai.claude.command).toBe('claude-beta')
+    expect(config.ai.claude.args).toEqual(['-p'])
+    expect(config.ai.codex.command).toBe('codex')
+  })
+
+  it('writes project-local AI config without dropping other local keys', async () => {
+    const repoRoot = await tempDir()
+    await mkdir(join(repoRoot, '.scribepad'), { recursive: true })
+    const localPath = join(repoRoot, '.scribepad', 'config.local.json')
+    await writeFile(localPath, '{"host":"localhost"}', 'utf8')
+
+    await writeProjectLocalAiConfig(repoRoot, {
+      ...DEFAULT_CONFIG.ai,
+      provider: 'claude-code-cli',
+      claude: { command: 'claude', args: ['-p'] },
+    })
+
+    const raw = JSON.parse(await readFile(localPath, 'utf8')) as {
+      host?: string
+      ai?: { provider?: string }
+    }
+    expect(raw.host).toBe('localhost')
+    expect(raw.ai?.provider).toBe('claude-code-cli')
   })
 
   it('does not read idle timeout environment variables', async () => {

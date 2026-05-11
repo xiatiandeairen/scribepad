@@ -71,6 +71,43 @@ export interface ReviewNormalizeResponse {
   content: string
 }
 
+export type AiProvider = 'codex-cli' | 'claude-code-cli'
+export type AiState = 'unknown' | 'untested' | 'testing' | 'ready' | 'error' | 'running'
+
+export interface AiConfig {
+  provider: AiProvider
+  timeoutMs: number
+  codex: {
+    command: string
+    model: string
+    reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh'
+    sandbox: 'read-only'
+  }
+  claude: {
+    command: string
+    args: string[]
+  }
+}
+
+export interface AiConfigResponse {
+  config: AiConfig
+  source?: 'config' | 'default'
+  error?: string
+}
+
+export interface AiConfigRequest {
+  config: AiConfig
+}
+
+export interface AiStatusResponse {
+  provider: AiProvider
+  label: string
+  state: AiState
+  available: boolean
+  reason?: string
+  lastCheckedAt?: string
+}
+
 // GET /api/session
 export interface SessionResponse {
   id: string

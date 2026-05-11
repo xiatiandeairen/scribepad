@@ -140,7 +140,7 @@ export function sessionsRoute(ctx: AppContext) {
     const req = (await c.req.json()) as ReviewNormalizeRequest
     try {
       ctx.sessionManager.getSession(c.req.param('sessionId'))
-      return c.json(await normalizeReviewPlanRequest(req))
+      return c.json(await normalizeReviewPlanRequest(req, ctx.getConfig().ai))
     } catch (e) {
       const err: ErrorResponse = { error: String((e as Error).message ?? e) }
       return c.json(err, e instanceof ReviewNormalizeInputError ? 400 : 500)

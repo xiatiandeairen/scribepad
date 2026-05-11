@@ -6,13 +6,13 @@ import {
 } from '../services/review-normalize.js'
 import type { ErrorResponse, ReviewNormalizeRequest } from '../../types/api.js'
 
-export function reviewNormalizeRoute(_ctx: AppContext) {
+export function reviewNormalizeRoute(ctx: AppContext) {
   const app = new Hono()
 
   app.post('/review-normalize', async (c) => {
     const req = (await c.req.json()) as ReviewNormalizeRequest
     try {
-      return c.json(await normalizeReviewPlanRequest(req))
+      return c.json(await normalizeReviewPlanRequest(req, ctx.getConfig().ai))
     } catch (e) {
       const err: ErrorResponse = { error: String((e as Error).message ?? e) }
       return c.json(err, e instanceof ReviewNormalizeInputError ? 400 : 500)

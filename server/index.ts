@@ -18,7 +18,7 @@ import {
   writeRegistry,
 } from './registry.js'
 import { SessionManager } from './services/session-manager.js'
-import { loadConfig } from './config.js'
+import { DEFAULT_CONFIG, loadConfig, writeProjectLocalAiConfig } from './config.js'
 
 const arg = process.argv[2]
 if (!arg) {
@@ -35,19 +35,30 @@ if (!existsSync(filePath)) {
 const explicitPort = process.env.PORT ? Number(process.env.PORT) : undefined
 const sessionMode = explicitPort === undefined
 const repoRoot = findRepoRoot(process.cwd())
-const config = await loadConfig({ env: process.env, repoRoot })
+let config = await loadConfig({ env: process.env, repoRoot }).catch((error: unknown) => {
+  console.warn(String((error as Error).message ?? error))
+  console.warn('[scribepad] falling back to default config')
+  return { ...DEFAULT_CONFIG }
+})
 
 if (sessionMode) {
   const existing = await readRegistry(repoRoot)
   if (!process.env.SCRIBEPAD_FORCE_SERVER && existing && (await isServerAlive(existing))) {
-    const opened = await openDocumentOnServer(existing.url, filePath)
-    console.log(`[scribepad] ${opened.url}`)
-    process.exit(0)
+    try {
+      const opened = await openDocumentOnServer(existing.url, filePath)
+      console.log(`[scribepad] ${opened.url}`)
+      process.exit(0)
+    } catch (error: unknown) {
+      console.warn(
+        `[scribepad] ignoring stale server registry: ${String((error as Error).message ?? error)}`,
+      )
+      await cleanupRegistry(repoRoot)
+    }
   }
   if (existing) await cleanupRegistry(repoRoot)
 }
 let baseUrl = 'http://127.0.0.1:0'
-const sessionManager = new SessionManager({ baseUrl: () => baseUrl })
+const sessionManager = new SessionManager({ baseUrl: () => baseUrl, getAiConfig: () => config.ai })
 
 let shutdownStarted = false
 
@@ -62,6 +73,12 @@ function requestClose(reason = 'server closed'): void {
 
 const app = createApp({
   sessionManager,
+  repoRoot,
+  getConfig: () => config,
+  updateAiConfig: async (ai) => {
+    await writeProjectLocalAiConfig(repoRoot, ai)
+    config = { ...config, ai }
+  },
   requestClose: sessionMode ? () => requestClose() : undefined,
   serveClient: sessionMode,
 })

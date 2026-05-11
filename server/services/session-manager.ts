@@ -12,7 +12,7 @@ import {
 } from './annotations.js'
 import { readDocument, saveDocument } from './document.js'
 import { rewriteItems } from './rewrite.js'
-import type { RewriteItem, RewriteResultEntry } from '../../types/api.js'
+import type { AiConfig, RewriteItem, RewriteResultEntry } from '../../types/api.js'
 import type { PlanItemState } from '../../types/plan.js'
 
 export interface ClientState {
@@ -37,11 +37,13 @@ export interface DocumentSession {
 export interface SessionManagerOptions {
   now?: () => Date
   baseUrl?: () => string
+  getAiConfig?: () => AiConfig
 }
 
 export class SessionManager {
   private readonly now: () => Date
   private readonly baseUrl: () => string
+  private readonly getAiConfig: (() => AiConfig) | undefined
   private readonly sessions = new Map<string, DocumentSession>()
   private readonly sessionsByPath = new Map<string, string>()
   private fallbackSessionId: string | undefined
@@ -51,6 +53,7 @@ export class SessionManager {
   constructor(options: SessionManagerOptions = {}) {
     this.now = options.now ?? (() => new Date())
     this.baseUrl = options.baseUrl ?? (() => 'http://127.0.0.1:0')
+    this.getAiConfig = options.getAiConfig
     this.lastActivityAt = this.now().toISOString()
   }
 
@@ -176,7 +179,9 @@ export class SessionManager {
     const session = this.getSession(id)
     const existing = await readAnnotations(session.filePath)
     this.touch(session)
-    return rewriteItems(fullDoc, items, existing)
+    const aiConfig = this.getAiConfig?.()
+    if (!aiConfig) throw new Error('AI config unavailable')
+    return rewriteItems(fullDoc, items, existing, aiConfig)
   }
 
   async done(id: string, content?: string): Promise<{ outputPath: string }> {

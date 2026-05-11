@@ -34,6 +34,8 @@ import {
   connectDocumentSession,
   disconnectDocumentSession,
   doneDocumentSession,
+  getAiConfig,
+  getAiStatus,
   getAnnotations,
   getDocumentSession,
   getFile,
@@ -43,13 +45,15 @@ import {
   heartbeatSession,
   normalizeReviewDocument,
   requestRewrite,
+  saveAiConfig,
   saveAnnotations,
   saveDocument,
   savePlanState,
+  testAiConfig,
 } from './lib/api'
 import { inspectPlan } from './lib/plan-inspector'
 import { validateNormalizedReview } from './lib/review-normalize-validation'
-import type { SessionResponse } from '../types/api'
+import type { AiConfig, AiStatusResponse, SessionResponse } from '../types/api'
 import type { PlanItem, PlanItemState, PlanItemStatus } from '../types/plan'
 
 /** Generate a sortable, collision-resistant id without bringing in a uuid dep. */
@@ -121,6 +125,30 @@ type HeaderSignal = {
   severity: 'warning' | 'info'
 }
 
+type AiPanelMode =
+  | 'editing'
+  | 'saving'
+  | 'saved'
+  | 'testing'
+  | 'test-success'
+  | 'test-error'
+  | 'save-error'
+
+const DEFAULT_AI_CONFIG: AiConfig = {
+  provider: 'codex-cli',
+  timeoutMs: 120_000,
+  codex: {
+    command: 'codex',
+    model: 'gpt-5.4-mini',
+    reasoningEffort: 'low',
+    sandbox: 'read-only',
+  },
+  claude: {
+    command: 'claude',
+    args: ['-p'],
+  },
+}
+
 export function App(): JSX.Element {
   const documentSessionId = useMemo(() => sessionIdFromLocation(), [])
   const clientIdRef = useRef<string | null>(null)
@@ -144,6 +172,18 @@ export function App(): JSX.Element {
   const [closingSession, setClosingSession] = useState(false)
   const [normalizingReview, setNormalizingReview] = useState(false)
   const [pendingReviewNormalization, setPendingReviewNormalization] = useState<string | null>(null)
+  const [aiConfig, setAiConfig] = useState<AiConfig>(DEFAULT_AI_CONFIG)
+  const [aiDraftConfig, setAiDraftConfig] = useState<AiConfig>(DEFAULT_AI_CONFIG)
+  const [aiStatus, setAiStatus] = useState<AiStatusResponse>({
+    provider: DEFAULT_AI_CONFIG.provider,
+    label: 'Codex CLI',
+    state: 'unknown',
+    available: false,
+  })
+  const [aiPanelOpen, setAiPanelOpen] = useState(false)
+  const [aiLoadError, setAiLoadError] = useState<string | null>(null)
+  const [aiPanelMode, setAiPanelMode] = useState<AiPanelMode>('editing')
+  const [aiPanelMessage, setAiPanelMessage] = useState<string | null>(null)
 
   // ── Persistence helper ─────────────────────────────────────────────────
   // Centralised so every optimistic update goes through one error-handling path.
@@ -190,6 +230,34 @@ export function App(): JSX.Element {
   useEffect(() => {
     void reload()
   }, [reload])
+
+  useEffect(() => {
+    let stopped = false
+    Promise.all([getAiConfig(), getAiStatus()])
+      .then(([configResp, statusResp]) => {
+        if (stopped) return
+        setAiConfig(configResp.config)
+        setAiDraftConfig(configResp.config)
+        setAiStatus(statusResp)
+        setAiLoadError(null)
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'load AI config failed'
+        setAiConfig(DEFAULT_AI_CONFIG)
+        setAiDraftConfig(DEFAULT_AI_CONFIG)
+        setAiStatus({
+          provider: DEFAULT_AI_CONFIG.provider,
+          label: 'Codex CLI',
+          state: 'error',
+          available: false,
+          reason: message,
+        })
+        setAiLoadError(message)
+      })
+    return () => {
+      stopped = true
+    }
+  }, [])
 
   useEffect(() => {
     let stopped = false
@@ -275,6 +343,78 @@ export function App(): JSX.Element {
     const sel = window.getSelection()
     sel?.removeAllRanges()
   }, [])
+
+  const closeAiPanel = useCallback((): void => {
+    setAiDraftConfig(aiConfig)
+    setAiPanelMode('editing')
+    setAiPanelMessage(null)
+    setAiPanelOpen(false)
+  }, [aiConfig])
+
+  const handleSaveAiConfig = useCallback(async (): Promise<void> => {
+    setAiPanelMode('saving')
+    setAiPanelMessage('正在保存…')
+    try {
+      const resp = await saveAiConfig(aiDraftConfig)
+      const status = await getAiStatus()
+      setAiConfig(resp.config)
+      setAiDraftConfig(resp.config)
+      setAiStatus(status)
+      setAiLoadError(null)
+      setAiPanelMode('saved')
+      setAiPanelMessage('已保存')
+      window.setTimeout(() => {
+        setAiPanelOpen(false)
+        setAiPanelMode('editing')
+        setAiPanelMessage(null)
+      }, 600)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'save AI config failed'
+      setAiPanelMode('save-error')
+      setAiPanelMessage(`保存失败：${message}`)
+    }
+  }, [aiDraftConfig])
+
+  const handleSaveAndTestAiConfig = useCallback(async (): Promise<void> => {
+    const label = aiDraftConfig.provider === 'codex-cli' ? 'Codex CLI' : 'Claude Code CLI'
+    setAiPanelMode('testing')
+    setAiPanelMessage(`正在测试 ${label}…`)
+    try {
+      const resp = await saveAiConfig(aiDraftConfig)
+      setAiConfig(resp.config)
+      setAiDraftConfig(resp.config)
+      setAiLoadError(null)
+      const status = await testAiConfig()
+      setAiStatus(status)
+      if (status.state === 'ready') {
+        setAiPanelMode('test-success')
+        setAiPanelMessage(`测试成功：${status.label} 可用`)
+        window.setTimeout(() => {
+          setAiPanelOpen(false)
+          setAiPanelMode('editing')
+          setAiPanelMessage(null)
+        }, 1200)
+      } else {
+        setAiPanelMode('test-error')
+        setAiPanelMessage(`测试失败：${status.reason ?? 'AI provider 不可用'}`)
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'save and test AI config failed'
+      setAiLoadError(message)
+      setAiPanelMode('test-error')
+      setAiPanelMessage(`测试失败：${message}`)
+      setAiStatus({
+        provider: aiDraftConfig.provider,
+        label: aiDraftConfig.provider === 'codex-cli' ? 'Codex CLI' : 'Claude Code CLI',
+        state: 'error',
+        available: false,
+        reason: message,
+      })
+      getAiStatus()
+        .then(setAiStatus)
+        .catch(() => undefined)
+    }
+  }, [aiDraftConfig])
 
   const dismissDraft = useCallback(
     (id: string): void => {
@@ -389,6 +529,7 @@ export function App(): JSX.Element {
       )
       setAnnotations(thinking)
       setBusy((prev) => ({ ...prev, [id]: true }))
+      setAiStatus((prev) => (prev ? { ...prev, state: 'running' } : prev))
       persistAnnotations(thinking)
 
       try {
@@ -423,6 +564,9 @@ export function App(): JSX.Element {
           return reverted
         })
       } finally {
+        getAiStatus()
+          .then(setAiStatus)
+          .catch(() => undefined)
         setBusy((prev) => {
           const next = { ...prev }
           delete next[id]
@@ -501,6 +645,7 @@ export function App(): JSX.Element {
   const handleNormalizeReview = useCallback(async (): Promise<void> => {
     try {
       setNormalizingReview(true)
+      setAiStatus((prev) => (prev ? { ...prev, state: 'running' } : prev))
       const result = await normalizeReviewDocument(content, documentSessionId)
       validateNormalizedReview(content, result.content)
       setPendingReviewNormalization(result.content)
@@ -509,6 +654,9 @@ export function App(): JSX.Element {
       setError(message)
     } finally {
       setNormalizingReview(false)
+      getAiStatus()
+        .then(setAiStatus)
+        .catch(() => undefined)
     }
   }, [content, documentSessionId])
 
@@ -656,6 +804,21 @@ export function App(): JSX.Element {
     }, [])
   const signalCount = headerSignals.length
   const warningSignalCount = headerSignals.filter((signal) => signal.severity === 'warning').length
+  const aiLabel = aiStatus?.label ?? 'AI'
+  const aiState = aiStatus?.state ?? 'untested'
+  const aiStateLabel =
+    aiState === 'ready'
+      ? 'Ready'
+      : aiState === 'running'
+        ? 'Running'
+        : aiState === 'testing'
+          ? 'Testing'
+          : aiState === 'unknown'
+            ? 'Unknown'
+            : aiState === 'error'
+              ? 'Error'
+              : 'Untested'
+  const aiPanelLocked = aiPanelMode === 'saving' || aiPanelMode === 'testing'
 
   // Hide popover while a modal is up — otherwise the popover floats over the
   // backdrop and steals clicks meant for cancel.
@@ -673,6 +836,19 @@ export function App(): JSX.Element {
           <span className="path">{path}</span>
         </div>
         <div className="app-header-metrics" aria-label="文档状态">
+          <button
+            type="button"
+            className={`metric-pill ai-trigger ${aiState}`}
+            onClick={() => {
+              setAiDraftConfig(aiConfig)
+              setAiPanelMode('editing')
+              setAiPanelMessage(null)
+              setAiPanelOpen(true)
+            }}
+          >
+            <b>AI</b>
+            {aiLabel} · {aiStateLabel}
+          </button>
           <span className="metric-pill ready">
             <b>{readinessProgress}%</b>
             Readiness
@@ -832,6 +1008,188 @@ export function App(): JSX.Element {
             </div>
           )
         })()}
+
+      {aiPanelOpen && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => {
+            if (!aiPanelLocked) closeAiPanel()
+          }}
+        >
+          <section
+            className="ai-config-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="AI 配置"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="ai-config-head">
+              <div>
+                <span>AI Assistant</span>
+                <strong>{`${aiStatus.label} · ${aiStateLabel}`}</strong>
+              </div>
+              <button
+                type="button"
+                aria-label="关闭 AI 配置"
+                onClick={closeAiPanel}
+                disabled={aiPanelLocked}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="ai-provider-options" role="radiogroup" aria-label="AI Provider">
+              <button
+                type="button"
+                className={aiDraftConfig.provider === 'codex-cli' ? 'selected' : ''}
+                disabled={aiPanelLocked}
+                onClick={() => setAiDraftConfig({ ...aiDraftConfig, provider: 'codex-cli' })}
+              >
+                <strong>Codex CLI</strong>
+                <span>{aiStatus.provider === 'codex-cli' ? aiStateLabel : '可选'}</span>
+              </button>
+              <button
+                type="button"
+                className={aiDraftConfig.provider === 'claude-code-cli' ? 'selected' : ''}
+                disabled={aiPanelLocked}
+                onClick={() => setAiDraftConfig({ ...aiDraftConfig, provider: 'claude-code-cli' })}
+              >
+                <strong>Claude Code</strong>
+                <span>{aiStatus.provider === 'claude-code-cli' ? aiStateLabel : '可选'}</span>
+              </button>
+            </div>
+
+            <div className="ai-config-grid">
+              {aiDraftConfig.provider === 'codex-cli' ? (
+                <>
+                  <label className="ai-config-field">
+                    <span>Codex command</span>
+                    <input
+                      disabled={aiPanelLocked}
+                      value={aiDraftConfig.codex.command}
+                      onChange={(event) =>
+                        setAiDraftConfig({
+                          ...aiDraftConfig,
+                          codex: { ...aiDraftConfig.codex, command: event.target.value },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="ai-config-field">
+                    <span>Codex model</span>
+                    <input
+                      disabled={aiPanelLocked}
+                      value={aiDraftConfig.codex.model}
+                      onChange={(event) =>
+                        setAiDraftConfig({
+                          ...aiDraftConfig,
+                          codex: { ...aiDraftConfig.codex, model: event.target.value },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="ai-config-field">
+                    <span>Reasoning</span>
+                    <select
+                      disabled={aiPanelLocked}
+                      value={aiDraftConfig.codex.reasoningEffort}
+                      onChange={(event) =>
+                        setAiDraftConfig({
+                          ...aiDraftConfig,
+                          codex: {
+                            ...aiDraftConfig.codex,
+                            reasoningEffort: event.target
+                              .value as AiConfig['codex']['reasoningEffort'],
+                          },
+                        })
+                      }
+                    >
+                      <option value="low">low</option>
+                      <option value="medium">medium</option>
+                      <option value="high">high</option>
+                      <option value="xhigh">xhigh</option>
+                    </select>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="ai-config-field">
+                    <span>Claude command</span>
+                    <input
+                      disabled={aiPanelLocked}
+                      value={aiDraftConfig.claude.command}
+                      onChange={(event) =>
+                        setAiDraftConfig({
+                          ...aiDraftConfig,
+                          claude: { ...aiDraftConfig.claude, command: event.target.value },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="ai-config-field">
+                    <span>Claude args</span>
+                    <input
+                      disabled={aiPanelLocked}
+                      value={aiDraftConfig.claude.args.join(' ')}
+                      onChange={(event) =>
+                        setAiDraftConfig({
+                          ...aiDraftConfig,
+                          claude: {
+                            ...aiDraftConfig.claude,
+                            args: event.target.value.split(/\s+/).filter(Boolean),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </>
+              )}
+              <label className="ai-config-field">
+                <span>Timeout seconds</span>
+                <input
+                  disabled={aiPanelLocked}
+                  type="number"
+                  min={10}
+                  value={Math.round(aiDraftConfig.timeoutMs / 1000)}
+                  onChange={(event) =>
+                    setAiDraftConfig({
+                      ...aiDraftConfig,
+                      timeoutMs: Math.max(10, Number(event.target.value) || 10) * 1000,
+                    })
+                  }
+                />
+              </label>
+            </div>
+
+            {aiPanelMessage && (
+              <div className={`ai-config-message ${aiPanelMode}`}>{aiPanelMessage}</div>
+            )}
+
+            {(aiLoadError || aiStatus.reason) && !aiPanelMessage && (
+              <div className="ai-config-error">{aiLoadError ?? aiStatus.reason}</div>
+            )}
+
+            <div className="ai-config-actions">
+              <button
+                type="button"
+                onClick={() => void handleSaveAiConfig()}
+                disabled={aiPanelLocked}
+              >
+                {aiPanelMode === 'saving' ? '保存中…' : '保存'}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void handleSaveAndTestAiConfig()}
+                disabled={aiPanelLocked}
+              >
+                {aiPanelMode === 'testing' ? '测试中…' : '保存并测试'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <DiffModal
         isOpen={modalOpen}

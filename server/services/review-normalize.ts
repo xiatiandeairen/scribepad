@@ -1,21 +1,22 @@
-import { runCodexCli } from '../adapters/codex-cli.js'
-import type { ReviewNormalizeRequest, ReviewNormalizeResponse } from '../../types/api.js'
+import { runAi } from './ai.js'
+import type { AiConfig, ReviewNormalizeRequest, ReviewNormalizeResponse } from '../../types/api.js'
 
 export class ReviewNormalizeInputError extends Error {}
 
 export async function normalizeReviewPlanRequest(
   req: Partial<ReviewNormalizeRequest>,
+  aiConfig: AiConfig,
 ): Promise<ReviewNormalizeResponse> {
   if (typeof req.fullDoc !== 'string' || req.fullDoc.trim() === '') {
     throw new ReviewNormalizeInputError('fullDoc required')
   }
-  return { content: await normalizeReviewPlan(req.fullDoc) }
+  return { content: await normalizeReviewPlan(req.fullDoc, aiConfig) }
 }
 
-export async function normalizeReviewPlan(fullDoc: string): Promise<string> {
-  const raw = await runCodexCli(buildPrompt(fullDoc))
+export async function normalizeReviewPlan(fullDoc: string, aiConfig: AiConfig): Promise<string> {
+  const raw = await runAi(aiConfig, { task: 'review-normalize', prompt: buildPrompt(fullDoc) })
   const content = stripMarkdownFence(raw).trim()
-  if (!content) throw new Error('codex returned empty normalized document')
+  if (!content) throw new Error('AI returned empty normalized document')
   return content
 }
 

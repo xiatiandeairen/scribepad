@@ -17,10 +17,16 @@ import { rewriteRoute } from './routes/rewrite.js'
 import { reviewNormalizeRoute } from './routes/review-normalize.js'
 import { sessionRoute } from './routes/session.js'
 import { sessionsRoute } from './routes/sessions.js'
+import { aiRoute } from './routes/ai.js'
 import type { SessionManager } from './services/session-manager.js'
+import type { ScribepadConfig } from './config.js'
+import type { AiConfig } from '../types/api.js'
 
 export interface AppContext {
   sessionManager: SessionManager
+  repoRoot: string
+  getConfig: () => ScribepadConfig
+  updateAiConfig: (ai: AiConfig) => Promise<void>
   /** Request graceful shutdown after the current HTTP response is sent. */
   requestClose?: () => void
   /** Serve the built SPA outside NODE_ENV=production, used by CLI session mode. */
@@ -36,6 +42,7 @@ export function createApp(ctx: AppContext) {
   app.route('/api', planStateRoute(ctx))
   app.route('/api', rewriteRoute(ctx))
   app.route('/api', reviewNormalizeRoute(ctx))
+  app.route('/api', aiRoute(ctx))
   app.route('/api', sessionRoute(ctx))
   app.route('/api', sessionsRoute(ctx))
 

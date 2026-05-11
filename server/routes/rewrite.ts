@@ -21,7 +21,7 @@ export function rewriteRoute(ctx: AppContext) {
     try {
       const session = ctx.sessionManager.getFallbackSession()
       const existing = await readAnnotations(session.filePath)
-      const results = await rewriteItems(req.fullDoc, req.items, existing)
+      const results = await rewriteItems(req.fullDoc, req.items, existing, ctx.getConfig().ai)
       const body: RewriteResponse = { results }
       return c.json(body)
     } catch (e) {

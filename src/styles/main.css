@@ -187,6 +187,31 @@ body {
   color: #16a34a;
 }
 
+.ai-trigger {
+  min-width: 126px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-trigger.ready b {
+  color: #16a34a;
+}
+
+.ai-trigger.running b,
+.ai-trigger.untested b {
+  color: #c2410c;
+}
+
+.ai-trigger.missing b,
+.ai-trigger.error b {
+  color: var(--danger);
+}
+
+.ai-trigger:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .signals-menu {
   position: relative;
   flex-shrink: 0;
@@ -871,6 +896,201 @@ mark.anno.decided {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
+}
+
+.ai-config-modal {
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(84vh, 720px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.ai-config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-config-head span,
+.ai-config-field span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.ai-config-head strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 15px;
+}
+
+.ai-config-head button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.ai-config-head button:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+
+.ai-provider-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.ai-provider-options button {
+  min-height: 58px;
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  text-align: left;
+}
+
+.ai-provider-options button.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ai-provider-options button:disabled {
+  opacity: 0.68;
+  cursor: wait;
+}
+
+.ai-provider-options strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.ai-provider-options span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ai-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 16px 14px;
+}
+
+.ai-config-field {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px 0;
+}
+
+.ai-config-grid .ai-config-field {
+  padding: 0;
+}
+
+.ai-config-field input,
+.ai-config-field select {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+
+.ai-config-field input:disabled,
+.ai-config-field select:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.ai-config-error {
+  margin: 0 16px 12px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ai-config-message {
+  margin: 0 16px 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ai-config-message.saving,
+.ai-config-message.testing {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.ai-config-message.saved,
+.ai-config-message.test-success {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.ai-config-message.save-error,
+.ai-config-message.test-error {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  color: var(--danger);
+}
+
+.ai-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.ai-config-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.ai-config-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.ai-config-actions button:disabled {
+  opacity: 0.62;
+  cursor: wait;
 }
 
 .review-structure-banner {
