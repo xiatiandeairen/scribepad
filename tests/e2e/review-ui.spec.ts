@@ -104,19 +104,20 @@ test.describe('Review UI', () => {
         hasText: '登录成功后服务端在 Redis 中创建 session 记录。',
       }),
     ).toHaveCount(0)
-    await page.locator('.review-point-main', { hasText: '服务端 Session' }).click()
+    await page.getByRole('button', { name: '展开详情: 服务端 Session' }).click()
     await expect(
       page.locator('.review-detail', {
         hasText: '登录成功后服务端在 Redis 中创建 session 记录。',
       }),
     ).toBeVisible()
-    await page.locator('.review-point-main', { hasText: '服务端 Session' }).click()
+    await page.getByRole('button', { name: '收起详情: 服务端 Session' }).click()
     await expect(
       page.locator('.review-detail', {
         hasText: '登录成功后服务端在 Redis 中创建 session 记录。',
       }),
     ).toHaveCount(0)
     await expect(page.locator('.review-point-check').first()).toBeVisible()
+    await expect(page.locator('.review-point-expand').first()).toHaveAttribute('title', '展开详情')
     await expect(page.locator('.review-tab-panel')).not.toBeEmpty()
     await expect(page.locator('.plan-rail-marker[aria-label*="服务端 Session"]')).toHaveCount(1)
     await expect
@@ -178,6 +179,7 @@ test.describe('Review UI', () => {
     await point.click()
     await expect(point).toHaveClass(/flash/)
     await expect(point).not.toHaveClass(/active/)
+    await expect.poll(() => lockedPlanStateCount(page)).toBe(1)
     await expect(point).not.toHaveClass(/flash/, { timeout: 1000 })
   })
 

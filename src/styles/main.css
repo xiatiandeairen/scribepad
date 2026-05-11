@@ -1068,7 +1068,7 @@ mark.anno.decided {
   width: 100%;
   min-height: 38px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 48px;
+  grid-template-columns: 22px minmax(0, 1fr) 28px 48px;
   gap: 8px;
   align-items: center;
   padding: 7px 8px 7px calc(8px + var(--point-indent, 0px));
@@ -1141,10 +1141,7 @@ mark.anno.decided {
 
 .review-point-main {
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-  align-items: center;
+  display: block;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1162,17 +1159,67 @@ mark.anno.decided {
   -webkit-line-clamp: 2;
 }
 
+.review-point-expand,
+.review-point-expand-spacer {
+  width: 26px;
+  height: 26px;
+}
+
+.review-point-expand {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #fdba74;
+  border-radius: 7px;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.review-point-expand:hover,
+.review-point-expand:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  outline: 2px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  outline-offset: 1px;
+}
+
 .review-point-caret {
-  width: 8px;
-  height: 8px;
-  border-right: 1.5px solid var(--muted);
-  border-bottom: 1.5px solid var(--muted);
-  transform: rotate(45deg);
+  width: 7px;
+  height: 7px;
+  border-right: 1.7px solid currentColor;
+  border-bottom: 1.7px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
   transition: transform 0.16s ease;
 }
 
 .review-point-caret.open {
-  transform: rotate(225deg);
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.review-point-expand-hint {
+  position: absolute;
+  right: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  padding: 4px 7px;
+  border: 1px solid #fdba74;
+  border-radius: 6px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition: opacity 0.12s ease;
+}
+
+.review-point-expand:hover .review-point-expand-hint,
+.review-point-expand:focus-visible .review-point-expand-hint {
+  opacity: 1;
 }
 
 .review-point-status {

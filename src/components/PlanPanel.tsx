@@ -246,22 +246,37 @@ function renderPoint(args: RenderPointArgs): JSX.Element {
       <button
         type="button"
         className="review-point-main"
-        aria-expanded={hasDetails ? expanded : undefined}
         onClick={() => {
           triggerFlash(item.id)
           props.onSelectItem(item.id)
-          if (!hasDetails) return
-          setExpandedIds((prev) => {
-            const next = new Set(prev)
-            if (next.has(item.id)) next.delete(item.id)
-            else next.add(item.id)
-            return next
-          })
+          props.onToggleLocked(item)
         }}
       >
         <span className="review-point-text">{item.text}</span>
-        {hasDetails && <span className={`review-point-caret ${expanded ? 'open' : ''}`} />}
       </button>
+      {hasDetails ? (
+        <button
+          type="button"
+          className="review-point-expand"
+          aria-label={`${expanded ? '收起' : '展开'}详情: ${item.text}`}
+          aria-expanded={expanded}
+          title={expanded ? '收起详情' : '展开详情'}
+          onClick={(event) => {
+            event.stopPropagation()
+            setExpandedIds((prev) => {
+              const next = new Set(prev)
+              if (next.has(item.id)) next.delete(item.id)
+              else next.add(item.id)
+              return next
+            })
+          }}
+        >
+          <span className={`review-point-caret ${expanded ? 'open' : ''}`} />
+          <span className="review-point-expand-hint">{expanded ? '收起' : '展开'}</span>
+        </button>
+      ) : (
+        <span className="review-point-expand-spacer" aria-hidden="true" />
+      )}
       <span className="review-point-status">{statusLabel(item.status)}</span>
     </div>
   )
