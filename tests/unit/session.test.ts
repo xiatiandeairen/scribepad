@@ -76,7 +76,7 @@ describe('SessionManager', () => {
     await writeFile(
       sidecarPath(filePath),
       JSON.stringify({
-        version: 3,
+        version: 4,
         annotations: [],
       }),
       'utf8',

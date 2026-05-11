@@ -47,8 +47,6 @@ import {
   saveDocument,
   savePlanState,
 } from './lib/api'
-import { remapAnchorsAfterRewrite, resolveAnchorToSourceRange } from './lib/anchor'
-import { renderMarkdown } from './lib/markdown'
 import { inspectPlan } from './lib/plan-inspector'
 import { validateNormalizedReview } from './lib/review-normalize-validation'
 import type { SessionResponse } from '../types/api'
@@ -68,6 +66,45 @@ function sessionIdFromLocation(): string | undefined {
 function cssEscape(value: string): string {
   if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value)
   return value.replace(/"/g, '\\"')
+}
+
+function isValidSourceRange(anchor: Anchor, sourceLength: number): boolean {
+  return (
+    Number.isInteger(anchor.srcStart) &&
+    Number.isInteger(anchor.srcEnd) &&
+    anchor.srcStart >= 0 &&
+    anchor.srcEnd > anchor.srcStart &&
+    anchor.srcEnd <= sourceLength
+  )
+}
+
+function remapAnnotationsAfterSourceRewrite(
+  annotations: Annotation[],
+  rewrittenId: string,
+  rewrittenRange: [number, number],
+  replacementLength: number,
+): Annotation[] {
+  const [rewriteStart, rewriteEnd] = rewrittenRange
+  const delta = replacementLength - (rewriteEnd - rewriteStart)
+
+  return annotations.map((anno) => {
+    if (anno.id === rewrittenId || anno.status !== 'open') return anno
+
+    const { srcStart, srcEnd } = anno.anchor
+    if (srcEnd <= rewriteStart) return anno
+    if (srcStart >= rewriteEnd) {
+      return {
+        ...anno,
+        anchor: {
+          ...anno.anchor,
+          srcStart: srcStart + delta,
+          srcEnd: srcEnd + delta,
+        },
+      }
+    }
+
+    return { ...anno, status: 'dismissed' as const }
+  })
 }
 
 const SIGNAL_SECTION_LABELS: Partial<Record<PlanItem['kind'], string>> = {
@@ -269,6 +306,21 @@ export function App(): JSX.Element {
       if (!target) return
       if (target.closest('.popover')) return
       if (target.closest(`.anno-card[data-anno-id="${activeDraft.id}"]`)) return
+      if (target.closest('.reader')) {
+        const startX = event.clientX
+        const startY = event.clientY
+        const onPointerUp = (upEvent: PointerEvent): void => {
+          document.removeEventListener('pointerup', onPointerUp, true)
+          const dx = upEvent.clientX - startX
+          const dy = upEvent.clientY - startY
+          const sel = window.getSelection()
+          if (Math.hypot(dx, dy) >= 4 || (sel && !sel.isCollapsed)) return
+          dismissDraft(activeDraft.id)
+          clearSelection()
+        }
+        document.addEventListener('pointerup', onPointerUp, true)
+        return
+      }
       dismissDraft(activeDraft.id)
       clearSelection()
     }
@@ -495,45 +547,28 @@ export function App(): JSX.Element {
   }, [content, documentSessionId])
 
   // ── Modal actions ──────────────────────────────────────────────────────
-  // applyRewrite — splice the AI rewrite into the source at the anchor's
-  // location, mark the annotation status='applied' (so it leaves the
-  // sidebar), and persist both the .md and the sidecar. `lock` flips
-  // state='decided' before applying.
-  //
-  // The anchor → source-range mapping reads `data-src-start/end` on the
-  // target sentence span(s). For sub-sentence anchors on plain-text spans
-  // we splice precisely; for spans containing inline markdown formatting
-  // we degrade to the full-sentence range (preserves `**` / `*` / etc.).
+  // applyRewrite — splice the AI rewrite directly into the markdown source
+  // by the stored source-range anchor. The accepted annotation is archived,
+  // later anchors shift by the source delta, and overlapping open annotations
+  // are dismissed in v1 to avoid applying stale ranges.
   const applyRewrite = useCallback(
     (id: string, lock: boolean): void => {
       const target = annotations.find((a) => a.id === id)
       if (!target || target.ai_suggestion == null) return
 
-      const reader = document.querySelector<HTMLDivElement>('.reader')
-      if (!reader) {
-        setError('reader not mounted')
+      if (!isValidSourceRange(target.anchor, content.length)) {
+        setError('anchor source range is invalid')
         return
       }
-      const range = resolveAnchorToSourceRange(reader, target.anchor)
-      if (!range) {
-        setError('anchor no longer locatable in document')
-        return
-      }
-      const [srcStart, srcEnd] = range
+
+      const { srcStart, srcEnd } = target.anchor
       const newContent = content.slice(0, srcStart) + target.ai_suggestion + content.slice(srcEnd)
 
-      const oldRoot = document.createElement('div')
-      oldRoot.innerHTML = renderMarkdown(content)
-      const newRoot = document.createElement('div')
-      newRoot.innerHTML = renderMarkdown(newContent)
-
-      const rebased = remapAnchorsAfterRewrite(
-        oldRoot,
-        newRoot,
+      const rebased = remapAnnotationsAfterSourceRewrite(
         annotations,
         id,
         [srcStart, srcEnd],
-        target.ai_suggestion,
+        target.ai_suggestion.length,
       )
       const next = rebased.map((a) =>
         a.id === id
@@ -549,6 +584,7 @@ export function App(): JSX.Element {
       setContent(newContent)
       setAnnotations(next)
       setDecidingModalFor(null)
+      setActiveId(undefined)
 
       saveDocument(newContent, documentSessionId).catch((err: unknown) => {
         const message = err instanceof Error ? err.message : 'save document failed'

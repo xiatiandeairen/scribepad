@@ -16,6 +16,20 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
 import { clearSidecar, createAnnotation, mockRewrite, waitForReaderReady } from './helpers'
 
+type PersistedAnnotation = {
+  id: string
+  status: string
+  anchor: { srcStart: number; srcEnd: number; text: string }
+}
+
+async function readPersistedAnnotations(page: Page): Promise<PersistedAnnotation[]> {
+  return page.evaluate(async () => {
+    const res = await fetch('/api/annotations')
+    const data = (await res.json()) as { annotations: PersistedAnnotation[] }
+    return data.annotations
+  })
+}
+
 async function mockRewriteDelayed(page: Page, delayMs = 350): Promise<void> {
   await page.route('**/api/rewrite', async (route: Route) => {
     const req = route.request()
@@ -85,6 +99,11 @@ test.describe('rewrite flow', () => {
       paragraphSelector: '.reader',
       substring: '成熟身份提供商',
     })
+    const beforeAccept = await readPersistedAnnotations(page)
+    const secondBefore = beforeAccept.find(
+      (annotation) => annotation.anchor.text === secondSelected,
+    )
+    expect(secondBefore).toBeDefined()
 
     const secondCard = page.locator('.anno-card').nth(1)
     await secondCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').fill('再压缩一点')
@@ -102,6 +121,11 @@ test.describe('rewrite flow', () => {
     await page.locator('.diff-modal button.primary', { hasText: '接受' }).first().click()
 
     await expect(page.locator('.reader')).toContainText(firstSelected + ' [改写]')
+    const afterAccept = await readPersistedAnnotations(page)
+    const secondAfter = afterAccept.find((annotation) => annotation.anchor.text === secondSelected)
+    expect(secondAfter?.status).toBe('open')
+    expect(secondAfter?.anchor.srcStart).toBe(secondBefore!.anchor.srcStart + ' [改写]'.length)
+    expect(secondAfter?.anchor.srcEnd).toBe(secondBefore!.anchor.srcEnd + ' [改写]'.length)
 
     await expect(page.locator('.anno-card.deciding')).toHaveCount(1)
     const survivingCard = page.locator('.anno-card.deciding').first()
@@ -110,6 +134,64 @@ test.describe('rewrite flow', () => {
 
     await survivingCard.click()
     await expect(page.locator('.diff-modal .row-add')).toContainText(secondSelected + ' [改写]')
+  })
+
+  test('accept dismisses other annotations intersecting the rewritten source range', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await waitForReaderReady(page)
+
+    const selected = await createAnnotation(page, { substring: 'session token' })
+    const [first] = await readPersistedAnnotations(page)
+    expect(first).toBeDefined()
+
+    const overlap: PersistedAnnotation = {
+      id: 'a-overlap',
+      status: 'open',
+      anchor: {
+        srcStart: first!.anchor.srcStart + 1,
+        srcEnd: first!.anchor.srcEnd,
+        text: selected.slice(1),
+      },
+    }
+
+    await page.evaluate(
+      async (annotations: PersistedAnnotation[]) => {
+        await fetch('/api/annotations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            annotations: annotations.map((annotation) => ({
+              ...annotation,
+              state: 'draft',
+              history: [],
+              created_at: '2026-05-11T00:00:00.000Z',
+              ai_suggestion: null,
+            })),
+          }),
+        })
+      },
+      [first!, overlap],
+    )
+
+    await page.reload()
+    await waitForReaderReady(page)
+    await page.getByRole('tab', { name: /Comments/ }).click()
+    await expect(page.locator('.anno-card')).toHaveCount(2)
+
+    const firstCard = page.locator('.anno-card').first()
+    await firstCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').fill('改得更专业一些')
+    await firstCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').press('Enter')
+    await expect(page.locator('.anno-card.deciding')).toBeVisible()
+    await page.locator('.anno-card.deciding').first().click()
+    await page.locator('.diff-modal button.primary', { hasText: '接受' }).first().click()
+
+    await expect(page.locator('.anno-card')).toHaveCount(0)
+    await expect(page.locator('mark.anno')).toHaveCount(0)
+    const afterAccept = await readPersistedAnnotations(page)
+    expect(afterAccept.find((annotation) => annotation.id === first!.id)?.status).toBe('applied')
+    expect(afterAccept.find((annotation) => annotation.id === overlap.id)?.status).toBe('dismissed')
   })
 
   test('reprompt stays in modal, syncs sidebar thinking, and can reopen after close', async ({

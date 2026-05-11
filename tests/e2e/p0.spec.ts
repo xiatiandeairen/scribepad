@@ -43,6 +43,12 @@ const STRUCTURED_REVIEW_SAMPLE = [
   '- 登出后会话立刻失效。',
 ].join('\n')
 
+type PersistedAnnotation = {
+  id: string
+  status: string
+  anchor: { srcStart: number; srcEnd: number; text: string }
+}
+
 function restoreSample(): void {
   writeFileSync(SAMPLE_PATH, sampleBaseline, 'utf8')
 }
@@ -82,6 +88,14 @@ async function waitForAnnotationCount(page: Page, count: number): Promise<void> 
       return res
     })
     .toBe(count)
+}
+
+async function readPersistedAnnotations(page: Page): Promise<PersistedAnnotation[]> {
+  return page.evaluate(async () => {
+    const res = await fetch('/api/annotations')
+    const data = (await res.json()) as { annotations: PersistedAnnotation[] }
+    return data.annotations
+  })
 }
 
 async function promoteFirstAnnotationToDecided(page: Page): Promise<void> {
@@ -316,6 +330,9 @@ test.describe('P0 product flows', () => {
       paragraphSelector: '.reader',
       substring: '成熟身份提供商',
     })
+    const beforeAccept = await readPersistedAnnotations(page)
+    const secondBefore = beforeAccept.find((annotation) => annotation.anchor.text === second)
+    expect(secondBefore).toBeDefined()
 
     const secondCard = page.locator('.anno-card').nth(1)
     await secondCard.locator('textarea[placeholder="告诉 AI 怎么改…"]').fill('改第二处')
@@ -332,6 +349,11 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('.reader')).toContainText(`${first} [改写]`)
     await expect(page.locator('.anno-card.deciding')).toHaveCount(1)
     await expect(page.locator('.anno-card.deciding')).not.toContainText(second)
+    const afterAccept = await readPersistedAnnotations(page)
+    const secondAfter = afterAccept.find((annotation) => annotation.anchor.text === second)
+    expect(secondAfter?.status).toBe('open')
+    expect(secondAfter?.anchor.srcStart).toBe(secondBefore!.anchor.srcStart + ' [改写]'.length)
+    expect(secondAfter?.anchor.srcEnd).toBe(secondBefore!.anchor.srcEnd + ' [改写]'.length)
 
     await page.locator('.anno-card.deciding').click()
 

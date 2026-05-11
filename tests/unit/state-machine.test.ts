@@ -80,9 +80,8 @@ describe('sidecar plan state', () => {
     const annotation: Annotation = {
       id: 'a-1',
       anchor: {
-        blockId: 'b-0',
-        startSentenceIdx: 0,
-        endSentenceIdx: 0,
+        srcStart: 2,
+        srcEnd: 6,
         text: 'Plan',
       },
       state: 'draft',
@@ -97,9 +96,11 @@ describe('sidecar plan state', () => {
       { id: 'scope:1', status: 'locked', textHash: 'abc', updatedAt: '2026-05-06' },
     ])
     const raw = JSON.parse(await readFile(sidecarPath(docPath), 'utf8')) as {
+      version: number
       annotations: unknown[]
       planState: unknown[]
     }
+    expect(raw.version).toBe(4)
     expect(raw.annotations).toHaveLength(1)
     expect(raw.planState).toHaveLength(1)
   })

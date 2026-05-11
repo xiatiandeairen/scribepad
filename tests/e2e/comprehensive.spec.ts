@@ -738,7 +738,7 @@ test.describe.skip('legacy comprehensive v0.1', () => {
         version: number
         annotations: unknown[]
       }
-      expect(sidecar.version).toBe(2)
+      expect(sidecar.version).toBe(4)
       expect(sidecar.annotations.length).toBe(1)
     })
   })

@@ -74,7 +74,7 @@ export async function readPlanState(docPath: string): Promise<PlanItemState[]> {
 
 async function readSidecar(docPath: string): Promise<Sidecar> {
   const p = sidecarPath(docPath)
-  if (!existsSync(p)) return { version: 3, annotations: [] }
+  if (!existsSync(p)) return { version: 4, annotations: [] }
   const raw = await readFile(p, 'utf8')
   return JSON.parse(raw) as Sidecar
 }
@@ -97,14 +97,14 @@ export async function writeAnnotations(docPath: string, annotations: Annotation[
   }
 
   const existingData = await readSidecar(docPath)
-  const data: Sidecar = { ...existingData, version: 3, annotations }
+  const data: Sidecar = { ...existingData, version: 4, annotations }
   if (existingData.planState) data.planState = existingData.planState
   await writeFile(sidecarPath(docPath), JSON.stringify(data, null, 2), 'utf8')
 }
 
 export async function writePlanState(docPath: string, planState: PlanItemState[]): Promise<void> {
   const existingData = await readSidecar(docPath)
-  const data: Sidecar = { ...existingData, version: 3, planState }
+  const data: Sidecar = { ...existingData, version: 4, planState }
   data.annotations = existingData.annotations ?? []
   await writeFile(sidecarPath(docPath), JSON.stringify(data, null, 2), 'utf8')
 }

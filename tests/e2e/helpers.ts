@@ -149,13 +149,76 @@ export async function createAnnotation(
   if ((await commentsTab.getAttribute('aria-selected')) !== 'true') {
     await commentsTab.click()
   }
-  const selected = await selectTextInReader(page, opts)
-  await page.locator('.reader').dispatchEvent('pointerup', {
+  const readerBox = await page.locator('.reader').boundingBox()
+  if (!readerBox) throw new Error('reader box not found')
+  const startX = readerBox.x + 10
+  const startY = readerBox.y + 10
+  await page.locator('.reader').dispatchEvent('pointerdown', {
     pointerType: 'mouse',
+    pointerId: 1,
+    button: 0,
+    clientX: startX,
+    clientY: startY,
     bubbles: true,
   })
+  const selected = await selectTextInReader(page, opts)
+  await page.evaluate(
+    ({ clientX, clientY }) => {
+      document.dispatchEvent(
+        new PointerEvent('pointerup', {
+          pointerType: 'mouse',
+          pointerId: 1,
+          clientX,
+          clientY,
+          bubbles: true,
+        }),
+      )
+    },
+    { clientX: startX + 30, clientY: startY },
+  )
   await expect(page.locator('.anno-card').first()).toBeVisible()
+  await expect
+    .poll(() =>
+      page.evaluate(async (text) => {
+        const res = await fetch('/api/annotations')
+        const data = (await res.json()) as {
+          annotations?: Array<{ anchor?: { text?: string } }>
+        }
+        return (data.annotations ?? []).some((annotation) => annotation.anchor?.text === text)
+      }, selected),
+    )
+    .toBe(true)
   return selected
+}
+
+export async function releaseReaderDragSelection(page: Page): Promise<void> {
+  const readerBox = await page.locator('.reader').boundingBox()
+  if (!readerBox) throw new Error('reader box not found')
+  const startX = readerBox.x + 10
+  const startY = readerBox.y + 10
+  await page.locator('.reader').dispatchEvent('pointerdown', {
+    pointerType: 'mouse',
+    pointerId: 1,
+    button: 0,
+    clientX: startX,
+    clientY: startY,
+    bubbles: true,
+  })
+  await page.evaluate(
+    ({ clientX, clientY }) => {
+      document.dispatchEvent(
+        new PointerEvent('pointerup', {
+          pointerType: 'mouse',
+          pointerId: 1,
+          clientX,
+          clientY,
+          bubbles: true,
+        }),
+      )
+    },
+    { clientX: startX + 30, clientY: startY },
+  )
+  await expect(page.locator('.anno-card').first()).toBeVisible()
 }
 
 /**

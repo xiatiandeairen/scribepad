@@ -5,20 +5,20 @@
  *
  *   1. dangerouslySetInnerHTML installs the rendered markdown (output of
  *      lib/markdown.ts) — paragraphs/headings/code carry `data-block-id`,
- *      every sentence is wrapped in `<span data-sentence-idx>`.
+ *      every sentence is wrapped in `<span data-sentence-idx>` with source
+ *      offsets.
  *   2. A useEffect resets innerHTML to the clean base, then walks each
- *      open annotation: locates its block + sentence spans via
- *      locateAnchorInDom and overlays a `<mark>` element. Whole-sentence
- *      anchors get one `<mark>` per covered sentence span; sub-sentence
- *      anchors wrap the in-sentence DOM range directly.
+ *      open annotation: locates source-coordinate DOM ranges via
+ *      locateSourceRangeInDom and overlays `<mark>` elements. A single
+ *      annotation can produce multiple marks when the source range crosses
+ *      paragraphs/list items.
  *
  * Two interaction paths feed the parent App:
  *
  *   - hover:    pure CSS affordance — sentence span shows an annotation hint.
  *   - click:    click a bare sentence span → create a whole-sentence draft.
- *   - drag:     non-collapsed selection → snap to whole-sentence boundaries
- *               when crossing sentences (visually too) → pointerup commits
- *               the selected range as a draft.
+ *   - drag:     non-collapsed selection → pointerup commits the exact
+ *               selected source range as a draft.
  *   - mark:     click inside an existing `<mark data-anno-id>` →
  *               onMarkClick(id) so App can activate / open modal.
  */
@@ -26,7 +26,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import type { Annotation, AnnotationState, Anchor } from '../../types/annotation'
 import type { PlanItem } from '../../types/plan'
 import { renderMarkdown } from '../lib/markdown'
-import { domSelectionToAnchor, locateAnchorInDom } from '../lib/anchor'
+import {
+  domSelectionToSourceAnchorInRoot,
+  domSelectionToSourceAnchor,
+  locateSourceRangeInDom,
+  type AnchorLocation,
+} from '../lib/anchor'
 
 export interface ReaderProps {
   content: string
@@ -69,11 +74,146 @@ function markClassFor(anno: Annotation, isActive: boolean): string {
   return `anno ${variant}${isActive ? ' active' : ''}`
 }
 
+function parseSourceAttrs(el: HTMLElement): { start: number; end: number } | null {
+  const start = Number.parseInt(el.getAttribute('data-src-start') ?? '', 10)
+  const end = Number.parseInt(el.getAttribute('data-src-end') ?? '', 10)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null
+  return { start, end }
+}
+
+function locateCharOffset(el: HTMLElement, target: number): { node: Node; offset: number } | null {
+  const textNodes: Text[] = []
+  const collect = (node: Node): void => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      textNodes.push(node as Text)
+      return
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      for (let index = 0; index < node.childNodes.length; index++) collect(node.childNodes[index]!)
+    }
+  }
+  collect(el)
+
+  let remaining = target
+  for (const textNode of textNodes) {
+    const length = (textNode.textContent ?? '').length
+    if (remaining <= length) return { node: textNode, offset: remaining }
+    remaining -= length
+  }
+
+  const last = textNodes[textNodes.length - 1]
+  if (last && remaining === 0) return { node: last, offset: (last.textContent ?? '').length }
+  return null
+}
+
+function rangesFromLocation(location: AnchorLocation, anchor: Anchor): Range[] {
+  return location.elements.flatMap((element) => {
+    const source = parseSourceAttrs(element)
+    if (!source) return []
+    const start = Math.max(anchor.srcStart, source.start)
+    const end = Math.min(anchor.srcEnd, source.end)
+    if (end <= start) return []
+
+    const range = document.createRange()
+    if (start === source.start && end === source.end) {
+      range.selectNodeContents(element)
+      return [range]
+    }
+
+    const startLoc = locateCharOffset(element, start - source.start)
+    const endLoc = locateCharOffset(element, end - source.start)
+    if (!startLoc || !endLoc) return []
+    range.setStart(startLoc.node, startLoc.offset)
+    range.setEnd(endLoc.node, endLoc.offset)
+    return [range]
+  })
+}
+
+function sentenceElementsForRange(rootEl: HTMLElement, range: Range): HTMLElement[] {
+  const sentences = rootEl.querySelectorAll<HTMLElement>('[data-sentence-idx]')
+  return Array.from(sentences).filter((sentence) => range.intersectsNode(sentence))
+}
+
+function wrapRangeWithMark(range: Range, className: string, annotationId: string): boolean {
+  if (range.collapsed) return false
+  const mark = document.createElement('mark')
+  mark.className = className
+  mark.setAttribute('data-anno-id', annotationId)
+
+  try {
+    range.surroundContents(mark)
+  } catch {
+    try {
+      const fragment = range.extractContents()
+      mark.appendChild(fragment)
+      range.insertNode(mark)
+    } catch {
+      return false
+    }
+  }
+  return true
+}
+
+function compareRangesDescending(a: Range, b: Range): number {
+  return b.compareBoundaryPoints(Range.START_TO_START, a)
+}
+
+interface SelectionGesture {
+  pointerId: number
+  startX: number
+  startY: number
+  lastReaderX: number
+  lastReaderY: number
+  endedOutsideReader: boolean
+}
+
+const DRAG_THRESHOLD_PX = 4
+const MAX_SELECTION_COMMIT_ATTEMPTS = 2
+
+function caretRangeFromPoint(x: number, y: number): Range | null {
+  const docWithCaretRange = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
+  }
+
+  const range = docWithCaretRange.caretRangeFromPoint?.(x, y)
+  if (range) return range
+
+  const position = docWithCaretRange.caretPositionFromPoint?.(x, y)
+  if (!position) return null
+
+  const fallbackRange = document.createRange()
+  fallbackRange.setStart(position.offsetNode, position.offset)
+  fallbackRange.collapse(true)
+  return fallbackRange
+}
+
+function orderedRangeFromPoints(gesture: SelectionGesture): Range | null {
+  const start = caretRangeFromPoint(gesture.startX, gesture.startY)
+  const end = caretRangeFromPoint(gesture.lastReaderX, gesture.lastReaderY)
+  if (!start || !end) return null
+
+  const range = document.createRange()
+  const startsAfterEnd = start.compareBoundaryPoints(Range.START_TO_START, end) > 0
+
+  if (startsAfterEnd) {
+    range.setStart(end.startContainer, end.startOffset)
+    range.setEnd(start.startContainer, start.startOffset)
+  } else {
+    range.setStart(start.startContainer, start.startOffset)
+    range.setEnd(end.startContainer, end.startOffset)
+  }
+
+  return range.collapsed ? null : range
+}
+
 export function Reader(props: ReaderProps): JSX.Element {
   const frameRef = useRef<HTMLDivElement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [railRanges, setRailRanges] = useState<PlanRailRange[]>([])
   const [layoutVersion, setLayoutVersion] = useState(0)
+  const selectionGestureRef = useRef<SelectionGesture | null>(null)
+  const pendingSelectionCommitRef = useRef<number | null>(null)
   // Cache the renderMarkdown output so we can restore the unmarked HTML
   // before each decoration pass — re-running renderMarkdown on every effect
   // would work but wastes parsing cycles for typical doc sizes.
@@ -98,6 +238,15 @@ export function Reader(props: ReaderProps): JSX.Element {
     onPlanItemClickRef.current = props.onPlanItemClick
   }, [props.onPlanItemClick])
 
+  useEffect(() => {
+    return () => {
+      if (pendingSelectionCommitRef.current !== null) {
+        window.cancelAnimationFrame(pendingSelectionCommitRef.current)
+        pendingSelectionCommitRef.current = null
+      }
+    }
+  }, [])
+
   const baseHtml = renderMarkdown(props.content)
   baseHtmlRef.current = baseHtml
 
@@ -116,43 +265,15 @@ export function Reader(props: ReaderProps): JSX.Element {
     const visible = props.annotations.filter((a) => a.status === 'open')
 
     for (const anno of visible) {
-      const loc = locateAnchorInDom(root, anno.anchor)
-      if (!loc) continue
+      const location = locateSourceRangeInDom(root, anno.anchor)
+      const ranges = location ? rangesFromLocation(location, anno.anchor) : []
+      if (ranges.length === 0) continue
       const cls = markClassFor(anno, props.activeId === anno.id)
 
-      if (loc.subRange) {
-        // Sub-sentence: wrap the in-sentence DOM range. surroundContents
-        // throws if the range partially crosses an inline element — fall
-        // through to whole-sentence highlighting in that case.
-        try {
-          const mark = document.createElement('mark')
-          mark.className = cls
-          mark.setAttribute('data-anno-id', anno.id)
-          loc.subRange.surroundContents(mark)
-          loc.sentences[0]?.setAttribute('data-anno-covered', anno.id)
-          continue
-        } catch {
-          // fall through to whole-sentence path
-        }
-      }
-
-      // Whole-sentence (or sub-sentence fallback): wrap each covered
-      // sentence span's contents with its own `<mark>`.
-      for (const span of loc.sentences) {
-        try {
-          const range = document.createRange()
-          range.selectNodeContents(span)
-          const mark = document.createElement('mark')
-          mark.className = cls
-          mark.setAttribute('data-anno-id', anno.id)
-          range.surroundContents(mark)
-          span.setAttribute('data-anno-covered', anno.id)
-        } catch {
-          // Span has incompatible structure for surroundContents — flag it
-          // covered so click won't try to create a duplicate, but skip the
-          // visual mark for this span.
-          span.setAttribute('data-anno-covered', anno.id)
-        }
+      for (const range of [...ranges].sort(compareRangesDescending)) {
+        const coveredSentences = sentenceElementsForRange(root, range)
+        for (const sentence of coveredSentences) sentence.setAttribute('data-anno-covered', anno.id)
+        wrapRangeWithMark(range, cls, anno.id)
       }
     }
 
@@ -224,7 +345,7 @@ export function Reader(props: ReaderProps): JSX.Element {
     }
   }, [])
 
-  // ── selectionchange + visual snap to sentence boundaries ────────────────
+  // ── selectionchange: report exact source-coordinate selection ──────────
   useEffect(() => {
     let timer: number | null = null
 
@@ -242,32 +363,7 @@ export function Reader(props: ReaderProps): JSX.Element {
         return
       }
 
-      const anchor = domSelectionToAnchor(range)
-
-      // Cross-sentence anchors auto-snap the visual selection to whole-
-      // sentence boundaries so what the user sees matches the anchor we'll
-      // commit. Skip when already snapped to avoid a redundant set.
-      if (anchor && anchor.startSentenceIdx !== anchor.endSentenceIdx) {
-        const loc = locateAnchorInDom(root, anchor)
-        if (loc && loc.sentences.length > 0) {
-          const first = loc.sentences[0]!
-          const last = loc.sentences[loc.sentences.length - 1]!
-          const alreadySnapped =
-            range.startContainer === first &&
-            range.startOffset === 0 &&
-            range.endContainer === last &&
-            range.endOffset === last.childNodes.length
-          if (!alreadySnapped) {
-            const snapped = document.createRange()
-            snapped.setStart(first, 0)
-            snapped.setEnd(last, last.childNodes.length)
-            sel.removeAllRanges()
-            sel.addRange(snapped)
-          }
-        }
-      }
-
-      onSelectionAnchorRef.current(anchor)
+      onSelectionAnchorRef.current(domSelectionToSourceAnchor(range))
     }
 
     const onSelectionChange = (): void => {
@@ -291,7 +387,6 @@ export function Reader(props: ReaderProps): JSX.Element {
     let el: HTMLElement | null = e.target as HTMLElement
     let markEl: HTMLElement | null = null
     let sentenceEl: HTMLElement | null = null
-    let blockEl: HTMLElement | null = null
 
     while (el && el !== e.currentTarget) {
       if (el.hasAttribute('data-plan-rail-id')) {
@@ -305,9 +400,6 @@ export function Reader(props: ReaderProps): JSX.Element {
       if (!sentenceEl && el.hasAttribute('data-sentence-idx')) {
         sentenceEl = el
       }
-      if (!blockEl && el.hasAttribute('data-block-id')) {
-        blockEl = el
-      }
       el = el.parentElement
     }
 
@@ -319,47 +411,129 @@ export function Reader(props: ReaderProps): JSX.Element {
 
     const sel = window.getSelection()
     if (sel && !sel.isCollapsed) return
-    if (!sentenceEl || !blockEl || sentenceEl.hasAttribute('data-anno-covered')) return
+    if (!sentenceEl || sentenceEl.hasAttribute('data-anno-covered')) return
 
-    const blockId = blockEl.getAttribute('data-block-id')
-    const sentenceIdx = Number.parseInt(sentenceEl.getAttribute('data-sentence-idx') ?? '', 10)
-    const text = (sentenceEl.textContent ?? '').trim()
-    if (!blockId || Number.isNaN(sentenceIdx) || !text) return
+    const source = parseSourceAttrs(sentenceEl)
+    const text = sentenceEl.textContent ?? ''
+    if (!source || !text.trim()) return
 
-    onCreateAnchorRef.current({
-      blockId,
-      startSentenceIdx: sentenceIdx,
-      endSentenceIdx: sentenceIdx,
-      text,
-    })
+    onCreateAnchorRef.current({ srcStart: source.start, srcEnd: source.end, text })
   }
 
-  // ── Drag-select commit ─────────────────────────────────────────────────
-  // Mouse/touch drag selection is a single gesture: release the pointer and
-  // immediately create a draft for that range. The App-level popover remains
-  // available only for non-pointer selection paths.
-  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
+  const commitSelectionAfterPointer = (gesture: SelectionGesture, attempt = 1): void => {
     const root = rootRef.current
-    if (!root) return
-
-    let el: HTMLElement | null = e.target as HTMLElement
-    while (el && el !== e.currentTarget) {
-      if (el.tagName === 'MARK' && el.hasAttribute('data-anno-id')) return
-      el = el.parentElement
+    if (!root) {
+      pendingSelectionCommitRef.current = null
+      return
     }
 
+    const pointRange = gesture.endedOutsideReader ? orderedRangeFromPoints(gesture) : null
     const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
-    const range = sel.getRangeAt(0)
-    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return
+    const selectedRange = sel && sel.rangeCount > 0 && !sel.isCollapsed ? sel.getRangeAt(0) : null
 
-    const anchor = domSelectionToAnchor(range)
-    if (!anchor) return
+    if (!pointRange && !selectedRange) {
+      if (attempt < MAX_SELECTION_COMMIT_ATTEMPTS) {
+        pendingSelectionCommitRef.current = window.requestAnimationFrame(() =>
+          commitSelectionAfterPointer(gesture, attempt + 1),
+        )
+        return
+      }
+      pendingSelectionCommitRef.current = null
+      return
+    }
+
+    const range = pointRange ?? selectedRange
+    if (!range) {
+      pendingSelectionCommitRef.current = null
+      return
+    }
+
+    const anchor = domSelectionToSourceAnchorInRoot(root, range)
+    if (!anchor) {
+      if (attempt < MAX_SELECTION_COMMIT_ATTEMPTS) {
+        pendingSelectionCommitRef.current = window.requestAnimationFrame(() =>
+          commitSelectionAfterPointer(gesture, attempt + 1),
+        )
+        return
+      }
+      pendingSelectionCommitRef.current = null
+      return
+    }
 
     onCreateAnchorRef.current(anchor)
     onSelectionAnchorRef.current(null)
-    sel.removeAllRanges()
+    sel?.removeAllRanges()
+    pendingSelectionCommitRef.current = null
   }
+
+  const scheduleSelectionCommit = (gesture: SelectionGesture): void => {
+    if (pendingSelectionCommitRef.current !== null) return
+    pendingSelectionCommitRef.current = window.requestAnimationFrame(() =>
+      commitSelectionAfterPointer(gesture, 1),
+    )
+  }
+
+  // ── Drag-select commit ─────────────────────────────────────────────────
+  // A drag selection starts inside the reader but may end outside it when the
+  // user moves quickly. Track the gesture from reader pointerdown and finish
+  // it from a document-level pointerup after the browser stabilizes selection.
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.button !== 0) return
+
+    let el: HTMLElement | null = e.target as HTMLElement
+    while (el && el !== e.currentTarget) {
+      if (el.tagName === 'MARK' && el.hasAttribute('data-anno-id')) {
+        selectionGestureRef.current = null
+        return
+      }
+      el = el.parentElement
+    }
+
+    selectionGestureRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      lastReaderX: e.clientX,
+      lastReaderY: e.clientY,
+      endedOutsideReader: false,
+    }
+  }
+
+  useEffect(() => {
+    const onDocumentPointerMove = (event: PointerEvent): void => {
+      const gesture = selectionGestureRef.current
+      const root = rootRef.current
+      if (!gesture || !root || event.pointerId !== gesture.pointerId) return
+
+      const hit = document.elementFromPoint(event.clientX, event.clientY)
+      if (!hit || !root.contains(hit)) return
+
+      gesture.lastReaderX = event.clientX
+      gesture.lastReaderY = event.clientY
+    }
+
+    const onDocumentPointerUp = (event: PointerEvent): void => {
+      const gesture = selectionGestureRef.current
+      const root = rootRef.current
+      if (!gesture || event.pointerId !== gesture.pointerId) return
+      selectionGestureRef.current = null
+
+      const dx = event.clientX - gesture.startX
+      const dy = event.clientY - gesture.startY
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+
+      const hit = document.elementFromPoint(event.clientX, event.clientY)
+      gesture.endedOutsideReader = !root || !hit || !root.contains(hit)
+      scheduleSelectionCommit(gesture)
+    }
+
+    document.addEventListener('pointermove', onDocumentPointerMove, true)
+    document.addEventListener('pointerup', onDocumentPointerUp, true)
+    return () => {
+      document.removeEventListener('pointermove', onDocumentPointerMove, true)
+      document.removeEventListener('pointerup', onDocumentPointerUp, true)
+    }
+  }, [])
 
   return (
     <div
@@ -394,7 +568,7 @@ export function Reader(props: ReaderProps): JSX.Element {
         ref={rootRef}
         className="reader"
         onClick={onClick}
-        onPointerUp={onPointerUp}
+        onPointerDown={onPointerDown}
         // Initial paint installs the rendered markdown; the effect above
         // overlays marks idempotently on subsequent renders.
         dangerouslySetInnerHTML={{ __html: baseHtml }}

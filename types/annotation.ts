@@ -1,16 +1,11 @@
 import type { PlanItemState } from './plan.js'
 
 /**
- * Annotation v0.2 schema — block-scoped, sentence-level anchor.
+ * Annotation schema — source-range anchor.
  *
- * Anchor carries:
- *   - blockId        — addresses a leaf block (paragraph / heading / code)
- *   - sentence range — start/end sentence index within that block
- *   - optional char range — sub-sentence span when start === end
- *
- * This shape forbids cross-block anchors by construction (one blockId only).
- * v0.1's `srcStart/srcEnd` global offsets are removed; sample sidecar must
- * be cleaned before this version mounts.
+ * Anchor carries an absolute markdown source range plus the selected text
+ * captured at creation time. There is no block/sentence anchor compatibility
+ * in this model.
  */
 
 export type AnnotationState =
@@ -25,23 +20,9 @@ export type AnnotationStatus =
 
 export type AnnotationTemplateHint = 'plan' | 'design' | 'research' | 'analysis'
 
-/**
- * Anchor — locates an annotation within a single leaf block (paragraph,
- * heading, or code). Cross-block anchors are not representable.
- *
- * Shapes:
- *   - whole sentence(s):  charStart/charEnd undefined; start ≤ end
- *   - sub-sentence phrase: start === end, charStart < charEnd, both in [0, sentenceLen]
- *
- * `text` is the rendered text captured at creation time, used both for
- * display in the sidebar and for stale detection if the source has drifted.
- */
 export interface Anchor {
-  blockId: string
-  startSentenceIdx: number
-  endSentenceIdx: number
-  charStart?: number
-  charEnd?: number
+  srcStart: number
+  srcEnd: number
   text: string
 }
 
@@ -69,13 +50,8 @@ export interface Annotation {
   created_at: string
 }
 
-/**
- * Sidecar — the on-disk format `.{filename}.annotations.json`.
- * version=3 ships with the v0.2 sentence-level anchor; v1/v2 sidecars are
- * not migrated (sample is wiped during the v0.2 rebuild).
- */
 export interface Sidecar {
-  version: 3
+  version: 4
   annotations: Annotation[]
   planState?: PlanItemState[]
 }

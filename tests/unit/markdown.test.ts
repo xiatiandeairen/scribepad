@@ -27,17 +27,45 @@ describe('renderMarkdown — basic blocks', () => {
 })
 
 describe('renderMarkdown — inline formatting', () => {
-  it('preserves strong / em / inlineCode wrappers with src offsets', () => {
-    const html = renderMarkdown('a **b** c *d* e `f`')
-    // The sentence span carries the source range; inline wrappers remain clean.
-    expect(html).toMatch(
-      /<span[^>]*data-sentence-idx="0"[^>]*data-src-start="0"[^>]*data-src-end="19"/,
+  it('wraps plain paragraph text segments with source offsets', () => {
+    const source = 'plain text.'
+    const html = renderMarkdown(source)
+
+    expect(html).toContain(
+      '<span data-source-text="plain text." data-src-start="0" data-src-end="11">plain text.</span>',
     )
-    expect(html).toContain('<strong>b</strong>')
+  })
+
+  it('preserves sentence spans with source offsets', () => {
+    const html = renderMarkdown('First. Second.')
+
+    expect(html).toMatch(
+      /<span[^>]*data-sentence-idx="0"[^>]*data-src-start="0"[^>]*data-src-end="7"/,
+    )
+    expect(html).toMatch(
+      /<span[^>]*data-sentence-idx="1"[^>]*data-src-start="7"[^>]*data-src-end="14"/,
+    )
+  })
+
+  it('maps strong / em / link / inlineCode visible text to source offsets', () => {
+    const source = 'a **b** c *d* e `f` [g](https://example.test)'
+    const html = renderMarkdown(source)
+    const sourceSpan = (text: string) => {
+      const start = source.indexOf(text)
+      return `<span data-source-text="${text}" data-src-start="${start}" data-src-end="${start + text.length}">${text}</span>`
+    }
+
+    expect(html).toMatch(
+      new RegExp(
+        `<span[^>]*data-sentence-idx="0"[^>]*data-src-start="0"[^>]*data-src-end="${source.length}"`,
+      ),
+    )
+    expect(html).toContain(`<strong>${sourceSpan('b')}</strong>`)
     expect(html).toContain('</strong>')
-    expect(html).toContain('<em>d</em>')
+    expect(html).toContain(`<em>${sourceSpan('d')}</em>`)
     expect(html).toContain('</em>')
-    expect(html).toContain('<code>f</code>')
+    expect(html).toContain(`<code>${sourceSpan('f')}</code>`)
+    expect(html).toContain(`<a href="https://example.test">${sourceSpan('g')}</a>`)
   })
 })
 
