@@ -96,6 +96,93 @@ test.describe('shared production server sessions', () => {
     await expectProcessExit(first.child, 20_000)
     await context.close()
   })
+
+  test('wait mode prints only the approved export path after Done', async ({ browser }) => {
+    test.setTimeout(45_000)
+
+    const tmp = await mkdtemp(join(tmpdir(), 'scribepad-wait-e2e-'))
+    const xdgConfig = join(tmp, 'xdg-config')
+    const xdgState = join(tmp, 'xdg-state')
+    const xdgRuntime = join(tmp, 'xdg-runtime')
+    const configPath = join(tmp, 'config.json')
+    const doc = join(tmp, 'wait.md')
+    await writeFile(
+      configPath,
+      JSON.stringify({ activeIdleMs: 10_000, initialIdleMs: 600_000 }),
+      'utf8',
+    )
+    await writeFile(doc, '# Wait Plan\n\nReviewed by human.\n', 'utf8')
+
+    const env = {
+      SCRIBEPAD_CONFIG: configPath,
+      XDG_CONFIG_HOME: xdgConfig,
+      XDG_STATE_HOME: xdgState,
+      XDG_RUNTIME_DIR: xdgRuntime,
+    }
+    const waitCli = await startWaitCli(doc, env)
+
+    const context = await browser.newContext()
+    const page = await context.newPage()
+    await openAndAssertDocument(page, waitCli.url, 'Wait Plan', 'Reviewed by human.')
+    await doneAndAccept(page)
+
+    const stdout = await waitForStdoutOnExit(waitCli.child, 20_000)
+    const outputPath = stdout.trim()
+    expect(outputPath).toBe(agentPathFor(doc, env))
+    expect(stdout).toBe(`${outputPath}\n`)
+    await expect(readFile(outputPath, 'utf8')).resolves.toBe('# Wait Plan\n\nReviewed by human.\n')
+    await context.close()
+  })
+
+  test('wait mode works when reusing an existing repo server', async ({ browser }) => {
+    test.setTimeout(45_000)
+
+    const tmp = await mkdtemp(join(tmpdir(), 'scribepad-wait-reuse-e2e-'))
+    const xdgConfig = join(tmp, 'xdg-config')
+    const xdgState = join(tmp, 'xdg-state')
+    const xdgRuntime = join(tmp, 'xdg-runtime')
+    const configPath = join(tmp, 'config.json')
+    const firstDoc = join(tmp, 'first.md')
+    const waitDoc = join(tmp, 'wait.md')
+    await writeFile(
+      configPath,
+      JSON.stringify({ activeIdleMs: 10_000, initialIdleMs: 600_000 }),
+      'utf8',
+    )
+    await writeFile(firstDoc, '# First Plan\n\nKeep server alive.\n', 'utf8')
+    await writeFile(waitDoc, '# Wait Plan\n\nReuse existing server.\n', 'utf8')
+
+    const env = {
+      SCRIBEPAD_CONFIG: configPath,
+      XDG_CONFIG_HOME: xdgConfig,
+      XDG_STATE_HOME: xdgState,
+      XDG_RUNTIME_DIR: xdgRuntime,
+    }
+    const first = await startCli(firstDoc, env)
+    const waitCli = await startWaitCli(waitDoc, env)
+
+    const firstUrl = new URL(first.url)
+    const waitUrl = new URL(waitCli.url)
+    expect(waitUrl.origin).toBe(firstUrl.origin)
+    expect(waitUrl.pathname).not.toBe(firstUrl.pathname)
+
+    const context = await browser.newContext()
+    const waitPage = await context.newPage()
+    await openAndAssertDocument(waitPage, waitCli.url, 'Wait Plan', 'Reuse existing server.')
+    await doneAndAccept(waitPage)
+
+    const stdout = await waitForStdoutOnExit(waitCli.child, 20_000)
+    const outputPath = stdout.trim()
+    expect(outputPath).toBe(agentPathFor(waitDoc, env))
+    expect(stdout).toBe(`${outputPath}\n`)
+    await expect.poll(() => sessionExists(first.url)).toBe(true)
+
+    const firstPage = await context.newPage()
+    await openAndAssertDocument(firstPage, first.url, 'First Plan', 'Keep server alive.')
+    await doneAndAccept(firstPage)
+    await expectProcessExit(first.child, 20_000)
+    await context.close()
+  })
 })
 
 async function openAndAssertDocument(
@@ -148,7 +235,22 @@ async function runCliToCompletion(
   return { url }
 }
 
-function waitForUrl(child: ChildProcessWithoutNullStreams): Promise<string> {
+async function startWaitCli(
+  filePath: string,
+  extraEnv: Record<string, string>,
+): Promise<CliResult> {
+  const child = spawn(process.execPath, [SERVER_ENTRY, filePath, '--wait'], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, NODE_ENV: 'production', ...extraEnv },
+  })
+  const url = await waitForUrl(child, 'stderr')
+  return { child, url }
+}
+
+function waitForUrl(
+  child: ChildProcessWithoutNullStreams,
+  stream: 'stdout' | 'stderr' = 'stdout',
+): Promise<string> {
   return new Promise((resolvePromise, reject) => {
     const timer = setTimeout(() => reject(new Error('timed out waiting for URL')), 10_000)
     const onData = (chunk: Buffer): void => {
@@ -156,10 +258,10 @@ function waitForUrl(child: ChildProcessWithoutNullStreams): Promise<string> {
       const match = text.match(/http:\/\/(?:127\.0\.0\.1|localhost):\d+\/s\/[^\s]+/)
       if (!match) return
       clearTimeout(timer)
-      child.stdout.off('data', onData)
+      child[stream].off('data', onData)
       resolvePromise(match[0])
     }
-    child.stdout.on('data', onData)
+    child[stream].on('data', onData)
     child.stderr.on('data', (chunk) => {
       const text = chunk.toString('utf8')
       if (text.includes('Error:')) {
@@ -170,6 +272,31 @@ function waitForUrl(child: ChildProcessWithoutNullStreams): Promise<string> {
     child.on('exit', (code) => {
       clearTimeout(timer)
       if (code !== 0) reject(new Error(`CLI exited before URL, code=${code}`))
+    })
+  })
+}
+
+function waitForStdoutOnExit(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMs: number,
+): Promise<string> {
+  return new Promise((resolvePromise, reject) => {
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8')
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8')
+    })
+    const timer = setTimeout(() => reject(new Error('process did not exit in time')), timeoutMs)
+    child.once('exit', (code) => {
+      clearTimeout(timer)
+      if (code !== 0) {
+        reject(new Error(`CLI exited with code=${code}: ${stderr}`))
+        return
+      }
+      resolvePromise(stdout)
     })
   })
 }

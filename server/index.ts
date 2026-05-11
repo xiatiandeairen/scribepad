@@ -20,11 +20,15 @@ import {
 import { SessionManager } from './services/session-manager.js'
 import { DEFAULT_CONFIG, loadConfig, writeProjectLocalAiConfig } from './config.js'
 
-const arg = process.argv[2]
+const args = process.argv.slice(2)
+const waitMode = args.includes('--wait')
+const arg = args.find((item) => !item.startsWith('-'))
 if (!arg) {
-  console.error('Usage: scribepad <path-to-markdown>')
+  console.error('Usage: scribepad <path-to-markdown> [--wait]')
   process.exit(1)
 }
+
+const log = waitMode ? console.error : console.log
 
 const filePath = resolve(arg)
 if (!existsSync(filePath)) {
@@ -46,7 +50,13 @@ if (sessionMode) {
   if (!process.env.SCRIBEPAD_FORCE_SERVER && existing && (await isServerAlive(existing))) {
     try {
       const opened = await openDocumentOnServer(existing.url, filePath)
-      console.log(`[scribepad] ${opened.url}`)
+      if (waitMode) {
+        console.error(`[scribepad] ${opened.url}`)
+        const result = await waitForRemoteDone(existing.url, opened.sessionId)
+        console.log(result.outputPath)
+      } else {
+        console.log(`[scribepad] ${opened.url}`)
+      }
       process.exit(0)
     } catch (error: unknown) {
       console.warn(
@@ -69,7 +79,7 @@ let shutdownStarted = false
 function requestClose(reason = 'server closed'): void {
   if (shutdownStarted) return
   shutdownStarted = true
-  console.log(`[scribepad] ${reason}`)
+  log(`[scribepad] ${reason}`)
   setTimeout(() => {
     server.close(() => process.exit(0))
   }, 25)
@@ -91,10 +101,10 @@ const port = explicitPort ?? 0
 const server = serve({ fetch: app.fetch, port, hostname: config.host }, (info) => {
   baseUrl = `http://${config.host}:${info.port}`
   const opened = sessionManager.openSession(filePath)
-  console.log(`[scribepad] serving ${filePath}`)
-  console.log(`[scribepad] ${opened.url}`)
+  log(`[scribepad] serving ${filePath}`)
+  log(`[scribepad] ${opened.url}`)
   if (sessionMode) {
-    console.log('[scribepad] server is shared by document sessions in this repo')
+    log('[scribepad] server is shared by document sessions in this repo')
     void writeRegistry(repoRoot, {
       pid: process.pid,
       port: info.port,
@@ -102,6 +112,21 @@ const server = serve({ fetch: app.fetch, port, hostname: config.host }, (info) =
       startedAt: new Date().toISOString(),
       repoRoot,
     })
+  }
+  if (waitMode) {
+    void sessionManager
+      .waitForDone(opened.sessionId)
+      .then((result) => {
+        console.log(result.outputPath)
+        if (sessionMode) void cleanupRegistry(repoRoot)
+        requestClose('review completed; shutting down')
+      })
+      .catch((error: unknown) => {
+        console.error(String((error as Error).message ?? error))
+        if (sessionMode) void cleanupRegistry(repoRoot)
+        process.exitCode = 2
+        requestClose('review wait failed; shutting down')
+      })
   }
 })
 
@@ -126,4 +151,19 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     void cleanupRegistry(repoRoot)
     requestClose(`${signal} received; shutting down`)
   })
+}
+
+async function waitForRemoteDone(
+  baseUrl: string,
+  sessionId: string,
+): Promise<{ outputPath: string }> {
+  const res = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/wait`)
+  if (!res.ok) {
+    throw new Error(await res.text())
+  }
+  const body = (await res.json()) as { outputPath?: string }
+  if (!body.outputPath) {
+    throw new Error('wait response missing outputPath')
+  }
+  return { outputPath: body.outputPath }
 }

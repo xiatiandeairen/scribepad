@@ -44,6 +44,12 @@ export interface SessionManagerOptions {
   getAiConfig?: () => AiConfig
 }
 
+type DoneResult = { outputPath: string }
+type DoneWaiter = {
+  resolve: (result: DoneResult) => void
+  reject: (error: Error) => void
+}
+
 export class SessionManager {
   private readonly repoRoot: string
   private readonly env: NodeJS.ProcessEnv
@@ -52,6 +58,7 @@ export class SessionManager {
   private readonly getAiConfig: (() => AiConfig) | undefined
   private readonly sessions = new Map<string, DocumentSession>()
   private readonly sessionsByPath = new Map<string, string>()
+  private readonly doneWaiters = new Map<string, DoneWaiter[]>()
   private fallbackSessionId: string | undefined
   private lastActivityAt: string
   private hasEverHadActiveSession = false
@@ -193,7 +200,7 @@ export class SessionManager {
     return rewriteItems(fullDoc, items, existing, aiConfig)
   }
 
-  async done(id: string, content?: string): Promise<{ outputPath: string }> {
+  async done(id: string, content?: string): Promise<DoneResult> {
     const session = this.getSession(id)
     session.status = 'closing'
     if (content !== undefined) {
@@ -208,7 +215,24 @@ export class SessionManager {
     session.clients.clear()
     this.sessionsByPath.delete(session.filePath)
     this.lastActivityAt = this.now().toISOString()
-    return { outputPath: session.outputPath }
+    const result = { outputPath: session.outputPath }
+    this.resolveDoneWaiters(id, result)
+    return result
+  }
+
+  waitForDone(id: string): Promise<DoneResult> {
+    const session = this.sessions.get(id)
+    if (!session) {
+      return Promise.reject(new Error(`Session not found: ${id}`))
+    }
+    if (session.status === 'closed' && session.exportedAt) {
+      return Promise.resolve({ outputPath: session.outputPath })
+    }
+    return new Promise<DoneResult>((resolve, reject) => {
+      const waiters = this.doneWaiters.get(id) ?? []
+      waiters.push({ resolve, reject })
+      this.doneWaiters.set(id, waiters)
+    })
   }
 
   shouldShutdown(options: { initialIdleMs: number; activeIdleMs: number }): boolean {
@@ -226,6 +250,15 @@ export class SessionManager {
 
   private sessionUrl(id: string): string {
     return `${this.baseUrl()}/s/${encodeURIComponent(id)}`
+  }
+
+  private resolveDoneWaiters(id: string, result: DoneResult): void {
+    const waiters = this.doneWaiters.get(id)
+    if (!waiters) return
+    this.doneWaiters.delete(id)
+    for (const waiter of waiters) {
+      waiter.resolve(result)
+    }
   }
 }
 

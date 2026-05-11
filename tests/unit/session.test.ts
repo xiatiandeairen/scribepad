@@ -110,6 +110,41 @@ describe('SessionManager', () => {
     expect(() => manager.getSession(opened.sessionId)).toThrow(/Session not found/)
   })
 
+  it('waitForDone resolves when the session is done', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'scribepad-wait-'))
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
+    const filePath = join(dir, 'plan.md')
+    await writeFile(filePath, '# Plan\n\nReviewed.\n', 'utf8')
+
+    const manager = new SessionManager({
+      repoRoot: dir,
+      env: { XDG_STATE_HOME: xdg },
+      now: () => new Date('2026-05-05T12:00:00.000Z'),
+    })
+    const opened = manager.openSession(filePath)
+    const waiting = manager.waitForDone(opened.sessionId)
+    const done = await manager.done(opened.sessionId)
+
+    await expect(waiting).resolves.toEqual(done)
+  })
+
+  it('waitForDone returns immediately for an already done session', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'scribepad-wait-'))
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
+    const filePath = join(dir, 'plan.md')
+    await writeFile(filePath, '# Plan\n\nReviewed.\n', 'utf8')
+
+    const manager = new SessionManager({
+      repoRoot: dir,
+      env: { XDG_STATE_HOME: xdg },
+      now: () => new Date('2026-05-05T12:00:00.000Z'),
+    })
+    const opened = manager.openSession(filePath)
+    const done = await manager.done(opened.sessionId)
+
+    await expect(manager.waitForDone(opened.sessionId)).resolves.toEqual(done)
+  })
+
   it('uses active idle timeout after all active sessions are done', async () => {
     let now = new Date('2026-05-05T12:00:00.000Z')
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-manager-'))

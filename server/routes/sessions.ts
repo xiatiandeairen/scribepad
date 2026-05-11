@@ -154,5 +154,16 @@ export function sessionsRoute(ctx: AppContext) {
     return c.json(body)
   })
 
+  app.get('/sessions/:sessionId/wait', async (c) => {
+    try {
+      const result = await ctx.sessionManager.waitForDone(c.req.param('sessionId'))
+      const body: DoneSessionResponse = { ok: true, outputPath: result.outputPath }
+      return c.json(body)
+    } catch (e) {
+      const err: ErrorResponse = { error: String((e as Error).message ?? e) }
+      return c.json(err, 404)
+    }
+  })
+
   return app
 }
