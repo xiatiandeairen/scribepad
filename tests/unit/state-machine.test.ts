@@ -70,12 +70,17 @@ describe('validateStateTransition — edge cases', () => {
 describe('sidecar plan state', () => {
   it('preserves plan state when annotations are written later', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-plan-state-'))
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
+    const env = { XDG_STATE_HOME: xdg }
     const docPath = join(dir, 'plan.md')
     await writeFile(docPath, '# Plan\n', 'utf8')
 
-    await writePlanState(docPath, [
-      { id: 'scope:1', status: 'locked', textHash: 'abc', updatedAt: '2026-05-06' },
-    ])
+    await writePlanState(
+      docPath,
+      [{ id: 'scope:1', status: 'locked', textHash: 'abc', updatedAt: '2026-05-06' }],
+      dir,
+      env,
+    )
 
     const annotation: Annotation = {
       id: 'a-1',
@@ -90,12 +95,12 @@ describe('sidecar plan state', () => {
       created_at: '2026-05-06T00:00:00.000Z',
       ai_suggestion: null,
     }
-    await writeAnnotations(docPath, [annotation])
+    await writeAnnotations(docPath, [annotation], dir, env)
 
-    await expect(readPlanState(docPath)).resolves.toEqual([
+    await expect(readPlanState(docPath, dir, env)).resolves.toEqual([
       { id: 'scope:1', status: 'locked', textHash: 'abc', updatedAt: '2026-05-06' },
     ])
-    const raw = JSON.parse(await readFile(sidecarPath(docPath), 'utf8')) as {
+    const raw = JSON.parse(await readFile(sidecarPath(docPath, dir, env), 'utf8')) as {
       version: number
       annotations: unknown[]
       planState: unknown[]

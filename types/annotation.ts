@@ -52,6 +52,8 @@ export interface Annotation {
 
 export interface Sidecar {
   version: 4
+  docPath?: string
+  docRelativePath?: string
   annotations: Annotation[]
   planState?: PlanItemState[]
 }

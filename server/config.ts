@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { AiConfig } from '../types/api.js'
+import { repoScopedConfigPath, userConfigPath } from './paths.js'
 
 export type ScribepadHost = '127.0.0.1' | 'localhost'
 
@@ -45,7 +45,7 @@ export async function loadConfig(options: {
     DEFAULT_CONFIG,
     await readOptionalConfig(resolveUserConfigPath(env), 'user config'),
     await readOptionalConfig(resolveProjectConfigPath(repoRoot), 'project config'),
-    await readOptionalConfig(resolveProjectLocalConfigPath(repoRoot), 'project local config'),
+    await readOptionalConfig(resolveProjectLocalConfigPath(repoRoot, env), 'repo local config'),
     env.SCRIBEPAD_CONFIG
       ? await readRequiredConfig(resolve(env.SCRIBEPAD_CONFIG), 'SCRIBEPAD_CONFIG')
       : {},
@@ -55,20 +55,26 @@ export async function loadConfig(options: {
 }
 
 export function resolveUserConfigPath(env: NodeJS.ProcessEnv): string {
-  const configHome = env.XDG_CONFIG_HOME ? resolve(env.XDG_CONFIG_HOME) : join(homedir(), '.config')
-  return join(configHome, 'scribepad', 'config.json')
+  return userConfigPath(env)
 }
 
 export function resolveProjectConfigPath(repoRoot: string): string {
   return join(repoRoot, '.scribepad', 'config.json')
 }
 
-export function resolveProjectLocalConfigPath(repoRoot: string): string {
-  return join(repoRoot, '.scribepad', 'config.local.json')
+export function resolveProjectLocalConfigPath(
+  repoRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return repoScopedConfigPath(repoRoot, env)
 }
 
-export async function writeProjectLocalAiConfig(repoRoot: string, ai: AiConfig): Promise<void> {
-  const path = resolveProjectLocalConfigPath(repoRoot)
+export async function writeProjectLocalAiConfig(
+  repoRoot: string,
+  ai: AiConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  const path = resolveProjectLocalConfigPath(repoRoot, env)
   let current: Record<string, unknown> = {}
   try {
     current = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>

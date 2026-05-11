@@ -58,7 +58,11 @@ if (sessionMode) {
   if (existing) await cleanupRegistry(repoRoot)
 }
 let baseUrl = 'http://127.0.0.1:0'
-const sessionManager = new SessionManager({ baseUrl: () => baseUrl, getAiConfig: () => config.ai })
+const sessionManager = new SessionManager({
+  repoRoot,
+  baseUrl: () => baseUrl,
+  getAiConfig: () => config.ai,
+})
 
 let shutdownStarted = false
 

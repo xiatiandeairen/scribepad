@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import type { OpenSessionResponse } from '../types/api.js'
+import { runtimeRegistryPath } from './paths.js'
 
 export interface ServerRegistry {
   pid: number
@@ -22,7 +23,7 @@ export function findRepoRoot(start: string): string {
 }
 
 export function registryPath(repoRoot: string): string {
-  return join(repoRoot, '.scribepad', 'server.json')
+  return runtimeRegistryPath(repoRoot)
 }
 
 export async function readRegistry(repoRoot: string): Promise<ServerRegistry | null> {

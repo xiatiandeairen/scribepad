@@ -1,7 +1,7 @@
 /**
- * services/annotations — sidecar JSON CRUD + state machine validation.
+ * services/annotations — document state JSON CRUD + state machine validation.
  *
- * Reads/writes `.{filename}.annotations.json` next to the doc.
+ * Reads/writes document state under XDG state home.
  * `writeAnnotations` defends against illegal state transitions by diffing
  * each incoming annotation against the previous sidecar entry (matched by id).
  *
@@ -13,14 +13,19 @@
  * Plan.md 的 "thinking"/"deciding" 是 UI 展示态; 持久化仍统一折叠到
  * `discussed`,再用 `ai_suggestion` 是否存在区分。
  */
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { dirname, basename, join } from 'node:path'
+import { dirname } from 'node:path'
 import type { Annotation, AnnotationState, Sidecar } from '../../types/annotation.js'
 import type { PlanItemState } from '../../types/plan.js'
+import { docRelativePath, documentStatePath, legacySidecarPath } from '../paths.js'
 
-export function sidecarPath(docPath: string): string {
-  return join(dirname(docPath), '.' + basename(docPath) + '.annotations.json')
+export function sidecarPath(
+  docPath: string,
+  repoRoot: string = dirname(docPath),
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return documentStatePath(repoRoot, docPath, env)
 }
 
 /**
@@ -62,27 +67,53 @@ export function validateStateTransition(
   return LEGAL_TRANSITIONS.has(`${prev}->${next}`)
 }
 
-export async function readAnnotations(docPath: string): Promise<Annotation[]> {
-  const data = await readSidecar(docPath)
+export async function readAnnotations(
+  docPath: string,
+  repoRoot: string = dirname(docPath),
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<Annotation[]> {
+  const data = await readSidecar(docPath, repoRoot, env)
   return data.annotations ?? []
 }
 
-export async function readPlanState(docPath: string): Promise<PlanItemState[]> {
-  const data = await readSidecar(docPath)
+export async function readPlanState(
+  docPath: string,
+  repoRoot: string = dirname(docPath),
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<PlanItemState[]> {
+  const data = await readSidecar(docPath, repoRoot, env)
   return data.planState ?? []
 }
 
-async function readSidecar(docPath: string): Promise<Sidecar> {
-  const p = sidecarPath(docPath)
-  if (!existsSync(p)) return { version: 4, annotations: [] }
+async function readSidecar(
+  docPath: string,
+  repoRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<Sidecar> {
+  const p = sidecarPath(docPath, repoRoot, env)
+  if (!existsSync(p)) {
+    const legacy = legacySidecarPath(docPath)
+    if (existsSync(legacy)) {
+      const raw = await readFile(legacy, 'utf8')
+      const migrated = withDocumentMeta(JSON.parse(raw) as Sidecar, docPath, repoRoot)
+      await writeSidecar(docPath, repoRoot, migrated, env)
+      return migrated
+    }
+    return withDocumentMeta({ version: 4, annotations: [] }, docPath, repoRoot)
+  }
   const raw = await readFile(p, 'utf8')
-  return JSON.parse(raw) as Sidecar
+  return withDocumentMeta(JSON.parse(raw) as Sidecar, docPath, repoRoot)
 }
 
-export async function writeAnnotations(docPath: string, annotations: Annotation[]): Promise<void> {
+export async function writeAnnotations(
+  docPath: string,
+  annotations: Annotation[],
+  repoRoot: string = dirname(docPath),
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
   // Defend against illegal state transitions. Match incoming annotations
   // against existing sidecar entries by id; new ids skip validation.
-  const existing = await readAnnotations(docPath)
+  const existing = await readAnnotations(docPath, repoRoot, env)
   const prevById = new Map(existing.map((a) => [a.id, a]))
 
   for (const next of annotations) {
@@ -96,15 +127,49 @@ export async function writeAnnotations(docPath: string, annotations: Annotation[
     }
   }
 
-  const existingData = await readSidecar(docPath)
-  const data: Sidecar = { ...existingData, version: 4, annotations }
+  const existingData = await readSidecar(docPath, repoRoot, env)
+  const data: Sidecar = withDocumentMeta(
+    { ...existingData, version: 4, annotations },
+    docPath,
+    repoRoot,
+  )
   if (existingData.planState) data.planState = existingData.planState
-  await writeFile(sidecarPath(docPath), JSON.stringify(data, null, 2), 'utf8')
+  await writeSidecar(docPath, repoRoot, data, env)
 }
 
-export async function writePlanState(docPath: string, planState: PlanItemState[]): Promise<void> {
-  const existingData = await readSidecar(docPath)
-  const data: Sidecar = { ...existingData, version: 4, planState }
+export async function writePlanState(
+  docPath: string,
+  planState: PlanItemState[],
+  repoRoot: string = dirname(docPath),
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  const existingData = await readSidecar(docPath, repoRoot, env)
+  const data: Sidecar = withDocumentMeta(
+    { ...existingData, version: 4, planState },
+    docPath,
+    repoRoot,
+  )
   data.annotations = existingData.annotations ?? []
-  await writeFile(sidecarPath(docPath), JSON.stringify(data, null, 2), 'utf8')
+  await writeSidecar(docPath, repoRoot, data, env)
+}
+
+async function writeSidecar(
+  docPath: string,
+  repoRoot: string,
+  data: Sidecar,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const p = sidecarPath(docPath, repoRoot, env)
+  await mkdir(dirname(p), { recursive: true })
+  await writeFile(p, JSON.stringify(withDocumentMeta(data, docPath, repoRoot), null, 2), 'utf8')
+}
+
+function withDocumentMeta(data: Sidecar, docPath: string, repoRoot: string): Sidecar {
+  return {
+    ...data,
+    version: 4,
+    docPath,
+    docRelativePath: docRelativePath(repoRoot, docPath),
+    annotations: data.annotations ?? [],
+  }
 }

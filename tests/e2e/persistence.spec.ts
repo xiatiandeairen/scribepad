@@ -1,10 +1,10 @@
 /**
  * persistence.spec — flow: create annotation → reload → annotation still there.
  *
- * Verifies the sidecar JSON round-trip described in docs/plan.md §1.2 row
+ * Verifies the document-state JSON round-trip described in docs/plan.md §1.2 row
  * "创建批注(draft)": after the user creates an annotation, App.persistAnnotations
- * fires `POST /api/annotations`, the server writes
- * `.sample.md.annotations.json`, and on a subsequent page load
+ * fires `POST /api/annotations`, the server writes XDG document state,
+ * and on a subsequent page load
  * `App.reload` calls `GET /api/annotations` to restore the list.
  *
  * Test ensures the selected text re-appears as a draft mark after
@@ -13,7 +13,7 @@
 import { test, expect } from '@playwright/test'
 import { clearSidecar, createAnnotation, waitForReaderReady } from './helpers'
 
-test.describe('sidecar persistence', () => {
+test.describe('document state persistence', () => {
   test.beforeEach(() => {
     clearSidecar()
   })

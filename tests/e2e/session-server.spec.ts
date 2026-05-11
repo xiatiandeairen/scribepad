@@ -15,11 +15,12 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { registryPath } from '../../server/registry'
+import { exportPathFor } from '../../server/paths'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(__dirname, '../..')
 const SERVER_ENTRY = resolve(REPO_ROOT, 'dist/server/index.js')
-const REGISTRY_PATH = resolve(REPO_ROOT, '.scribepad/server.json')
 
 type CliResult = {
   child: ChildProcessWithoutNullStreams
@@ -41,6 +42,9 @@ test.describe('shared production server sessions', () => {
     test.setTimeout(45_000)
 
     const tmp = await mkdtemp(join(tmpdir(), 'scribepad-e2e-'))
+    const xdgConfig = join(tmp, 'xdg-config')
+    const xdgState = join(tmp, 'xdg-state')
+    const xdgRuntime = join(tmp, 'xdg-runtime')
     const configPath = join(tmp, 'config.json')
     const firstDoc = join(tmp, 'first.md')
     const secondDoc = join(tmp, 'second.md')
@@ -52,7 +56,12 @@ test.describe('shared production server sessions', () => {
     await writeFile(firstDoc, '# First Plan\n\nFirst document body.\n', 'utf8')
     await writeFile(secondDoc, '# Second Plan\n\nSecond document body.\n', 'utf8')
 
-    const env = { SCRIBEPAD_CONFIG: configPath }
+    const env = {
+      SCRIBEPAD_CONFIG: configPath,
+      XDG_CONFIG_HOME: xdgConfig,
+      XDG_STATE_HOME: xdgState,
+      XDG_RUNTIME_DIR: xdgRuntime,
+    }
     const first = await startCli(firstDoc, env)
     const second = await runCliToCompletion(secondDoc, env)
 
@@ -73,14 +82,14 @@ test.describe('shared production server sessions', () => {
     await doneAndAccept(firstPage)
     await expect.poll(() => sessionExists(first.url)).toBe(false)
     await expect.poll(() => sessionExists(second.url)).toBe(true)
-    await expect(readFile(agentPathFor(firstDoc), 'utf8')).resolves.toBe(
+    await expect(readFile(agentPathFor(firstDoc, env), 'utf8')).resolves.toBe(
       '# First Plan\n\nFirst document body.\n',
     )
 
     await expect(secondPage.locator('.reader')).toContainText('Second document body.')
     await doneAndAccept(secondPage)
     await expect.poll(() => sessionExists(second.url)).toBe(false)
-    await expect(readFile(agentPathFor(secondDoc), 'utf8')).resolves.toBe(
+    await expect(readFile(agentPathFor(secondDoc, env), 'utf8')).resolves.toBe(
       '# Second Plan\n\nSecond document body.\n',
     )
 
@@ -183,9 +192,16 @@ function expectProcessExit(
 }
 
 async function cleanupRegistryServer(): Promise<void> {
-  if (existsSync(REGISTRY_PATH)) {
+  const registryCandidates = [registryPath(REPO_ROOT), resolve(REPO_ROOT, '.scribepad/server.json')]
+  for (const registryFile of registryCandidates) {
+    await cleanupRegistryFile(registryFile)
+  }
+}
+
+async function cleanupRegistryFile(registryFile: string): Promise<void> {
+  if (existsSync(registryFile)) {
     try {
-      const registry = JSON.parse(readFileSync(REGISTRY_PATH, 'utf8')) as { pid?: number }
+      const registry = JSON.parse(readFileSync(registryFile, 'utf8')) as { pid?: number }
       if (typeof registry.pid === 'number') {
         try {
           process.kill(registry.pid, 'SIGTERM')
@@ -197,11 +213,9 @@ async function cleanupRegistryServer(): Promise<void> {
       // Invalid registry; remove below.
     }
   }
-  await rm(REGISTRY_PATH, { force: true })
+  await rm(registryFile, { force: true })
 }
 
-function agentPathFor(filePath: string): string {
-  const dir = dirname(filePath)
-  const base = filePath.split('/').pop() ?? filePath
-  return join(dir, base.replace(/\.md$/, '.agent.md'))
+function agentPathFor(filePath: string, env: Record<string, string>): string {
+  return exportPathFor(REPO_ROOT, filePath, env)
 }

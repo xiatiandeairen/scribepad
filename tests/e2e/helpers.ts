@@ -2,9 +2,8 @@
  * E2E helpers — shared utilities for scribepad Playwright specs.
  *
  * Responsibilities:
- *   1. clearSidecar() — wipe `.sample.md.annotations.json` so each spec starts
- *      from a known-empty state. The sidecar lives next to sample.md at the
- *      project root; we resolve it relative to this file.
+ *   1. clearSidecar() — wipe sample.md document state so each spec starts
+ *      from a known-empty state.
  *   2. mockRewrite() — register a deterministic /api/rewrite handler that
  *      returns `<selection> [改写]` per item. Avoids real CLI agent calls
  *      so tests run offline + fast.
@@ -20,22 +19,26 @@ import { type Page, type Route, expect } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { existsSync, unlinkSync } from 'node:fs'
+import { documentStatePath, legacySidecarPath } from '../../server/paths'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+const REPO_ROOT = resolve(__dirname, '../..')
+const SAMPLE_PATH = resolve(REPO_ROOT, 'sample.md')
 
-/** Absolute path to the sidecar JSON next to sample.md. */
+/** Absolute path to the XDG document state JSON for sample.md. */
 export function sidecarPath(): string {
-  return resolve(__dirname, '../../.sample.md.annotations.json')
+  return documentStatePath(REPO_ROOT, SAMPLE_PATH, process.env)
 }
 
-/** Best-effort delete the sidecar; no-op when missing. Synchronous because
+/** Best-effort delete document state; no-op when missing. Synchronous because
  *  Playwright `beforeEach` accepts sync work and we want the FS state settled
  *  before the dev server reads it on page load. */
 export function clearSidecar(): void {
-  const p = sidecarPath()
-  if (existsSync(p)) {
-    unlinkSync(p)
+  for (const p of [sidecarPath(), legacySidecarPath(SAMPLE_PATH)]) {
+    if (existsSync(p)) {
+      unlinkSync(p)
+    }
   }
 }
 

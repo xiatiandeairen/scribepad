@@ -13,7 +13,7 @@ export function annotationsRoute(ctx: AppContext) {
 
   app.get('/annotations', async (c) => {
     const session = ctx.sessionManager.getFallbackSession()
-    const annotations = await readAnnotations(session.filePath)
+    const annotations = await readAnnotations(session.filePath, session.repoRoot)
     const body: AnnotationsResponse = { annotations }
     return c.json(body)
   })
@@ -21,7 +21,7 @@ export function annotationsRoute(ctx: AppContext) {
   app.post('/annotations', async (c) => {
     const req = (await c.req.json()) as AnnotationsRequest
     const session = ctx.sessionManager.getFallbackSession()
-    await writeAnnotations(session.filePath, req.annotations)
+    await writeAnnotations(session.filePath, req.annotations, session.repoRoot)
     session.dirty = true
     return c.json({ ok: true })
   })

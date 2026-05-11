@@ -174,7 +174,7 @@ test.describe('P0 product flows', () => {
     const selected = await createAnnotation(page, { substring: 'session token' })
     await expect(page.locator('mark.anno.draft')).toHaveText(selected)
     await expect(page.locator('.anno-card')).toHaveCount(1)
-    await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
+    await expect(page.locator('.metric-pill', { hasText: 'Comments' }).locator('b')).toHaveText('1')
     await expect(page.locator('.app-header')).not.toContainText('Decided')
 
     await page.reload()
@@ -184,7 +184,7 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('mark.anno.draft')).toHaveText(selected)
     await expect(page.locator('.anno-card')).not.toContainText(selected)
     await expect(page.locator('.anno-card textarea[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
-    await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
+    await expect(page.locator('.metric-pill', { hasText: 'Comments' }).locator('b')).toHaveText('1')
     await expect(page.locator('.app-header')).not.toContainText('Decided')
   })
 
@@ -250,7 +250,7 @@ test.describe('P0 product flows', () => {
 
     await expect(page.locator('mark.anno.decided')).toHaveText(selected)
     await expect(page.locator('.anno-card.decided')).toContainText('已锁定')
-    await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
+    await expect(page.locator('.metric-pill', { hasText: 'Comments' }).locator('b')).toHaveText('1')
     await expect(page.locator('.app-header')).not.toContainText('Decided')
 
     await page.reload()
@@ -259,7 +259,7 @@ test.describe('P0 product flows', () => {
 
     await expect(page.locator('mark.anno.decided')).toHaveText(selected)
     await expect(page.locator('.anno-card.decided')).toContainText('已锁定')
-    await expect(page.locator('.metric-pill').nth(1).locator('b')).toHaveText('1')
+    await expect(page.locator('.metric-pill', { hasText: 'Comments' }).locator('b')).toHaveText('1')
     await expect(page.locator('.app-header')).not.toContainText('Decided')
   })
 

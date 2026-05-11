@@ -8,7 +8,7 @@ export function planStateRoute(ctx: AppContext) {
 
   app.get('/plan-state', async (c) => {
     const session = ctx.sessionManager.getFallbackSession()
-    const planState = await readPlanState(session.filePath)
+    const planState = await readPlanState(session.filePath, session.repoRoot)
     const body: PlanStateResponse = { planState }
     return c.json(body)
   })
@@ -16,7 +16,7 @@ export function planStateRoute(ctx: AppContext) {
   app.post('/plan-state', async (c) => {
     const req = (await c.req.json()) as PlanStateRequest
     const session = ctx.sessionManager.getFallbackSession()
-    await writePlanState(session.filePath, req.planState)
+    await writePlanState(session.filePath, req.planState, session.repoRoot)
     session.dirty = true
     return c.json({ ok: true })
   })

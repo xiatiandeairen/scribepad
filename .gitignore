@@ -4,6 +4,7 @@ dist/
 .scribepad/server.json
 .scribepad/config.local.json
 *.annotations.json
+*.agent.md
 .DS_Store
 .vscode/
 .idea/

@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG, loadConfig, writeProjectLocalAiConfig } from '../../server/config'
+import {
+  DEFAULT_CONFIG,
+  loadConfig,
+  resolveProjectLocalConfigPath,
+  writeProjectLocalAiConfig,
+} from '../../server/config'
 
 async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'scribepad-config-'))
@@ -33,15 +38,13 @@ describe('loadConfig', () => {
     const repoRoot = await tempDir()
     const xdg = await tempDir()
     const override = join(await tempDir(), 'override.json')
+    const localPath = resolveProjectLocalConfigPath(repoRoot, { XDG_CONFIG_HOME: xdg })
     await mkdir(join(xdg, 'scribepad'), { recursive: true })
     await mkdir(join(repoRoot, '.scribepad'), { recursive: true })
+    await mkdir(join(localPath, '..'), { recursive: true })
     await writeFile(join(xdg, 'scribepad', 'config.json'), '{"activeIdleMs":100000}', 'utf8')
     await writeFile(join(repoRoot, '.scribepad', 'config.json'), '{"activeIdleMs":200000}', 'utf8')
-    await writeFile(
-      join(repoRoot, '.scribepad', 'config.local.json'),
-      '{"activeIdleMs":300000,"host":"localhost"}',
-      'utf8',
-    )
+    await writeFile(localPath, '{"activeIdleMs":300000,"host":"localhost"}', 'utf8')
     await writeFile(override, '{"activeIdleMs":400000,"host":"127.0.0.1"}', 'utf8')
 
     const config = await loadConfig({
@@ -59,14 +62,16 @@ describe('loadConfig', () => {
 
   it('merges AI provider config with defaults', async () => {
     const repoRoot = await tempDir()
-    await mkdir(join(repoRoot, '.scribepad'), { recursive: true })
+    const xdg = await tempDir()
+    const localPath = resolveProjectLocalConfigPath(repoRoot, { XDG_CONFIG_HOME: xdg })
+    await mkdir(join(localPath, '..'), { recursive: true })
     await writeFile(
-      join(repoRoot, '.scribepad', 'config.local.json'),
+      localPath,
       '{"ai":{"provider":"claude-code-cli","claude":{"command":"claude-beta"}}}',
       'utf8',
     )
 
-    const config = await loadConfig({ repoRoot, env: {} })
+    const config = await loadConfig({ repoRoot, env: { XDG_CONFIG_HOME: xdg } })
 
     expect(config.ai.provider).toBe('claude-code-cli')
     expect(config.ai.claude.command).toBe('claude-beta')
@@ -76,15 +81,21 @@ describe('loadConfig', () => {
 
   it('writes project-local AI config without dropping other local keys', async () => {
     const repoRoot = await tempDir()
-    await mkdir(join(repoRoot, '.scribepad'), { recursive: true })
-    const localPath = join(repoRoot, '.scribepad', 'config.local.json')
+    const xdg = await tempDir()
+    const env = { XDG_CONFIG_HOME: xdg }
+    const localPath = resolveProjectLocalConfigPath(repoRoot, env)
+    await mkdir(join(localPath, '..'), { recursive: true })
     await writeFile(localPath, '{"host":"localhost"}', 'utf8')
 
-    await writeProjectLocalAiConfig(repoRoot, {
-      ...DEFAULT_CONFIG.ai,
-      provider: 'claude-code-cli',
-      claude: { command: 'claude', args: ['-p'] },
-    })
+    await writeProjectLocalAiConfig(
+      repoRoot,
+      {
+        ...DEFAULT_CONFIG.ai,
+        provider: 'claude-code-cli',
+        claude: { command: 'claude', args: ['-p'] },
+      },
+      env,
+    )
 
     const raw = JSON.parse(await readFile(localPath, 'utf8')) as {
       host?: string

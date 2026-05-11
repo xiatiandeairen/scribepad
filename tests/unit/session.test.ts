@@ -1,13 +1,25 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { outputPathFor, SessionManager } from '../../server/services/session-manager'
 import { sidecarPath } from '../../server/services/annotations'
+import { docIdFor, repoIdFor } from '../../server/paths'
 
 describe('outputPathFor', () => {
-  it('writes next to the source markdown with .agent.md suffix', () => {
-    expect(outputPathFor('/repo/docs/plan.md')).toBe('/repo/docs/plan.agent.md')
+  it('writes exports under XDG state for the repo and document', async () => {
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
+    const path = outputPathFor('/repo', '/repo/docs/plan.md', { XDG_STATE_HOME: xdg })
+    expect(path).toBe(
+      join(
+        xdg,
+        'scribepad',
+        repoIdFor('/repo'),
+        'exports',
+        docIdFor('/repo', '/repo/docs/plan.md'),
+        'latest.agent.md',
+      ),
+    )
   })
 })
 
@@ -19,7 +31,7 @@ describe('SessionManager', () => {
     await writeFile(a, '# A\n', 'utf8')
     await writeFile(b, '# B\n', 'utf8')
 
-    const manager = new SessionManager({ baseUrl: () => 'http://127.0.0.1:3000' })
+    const manager = new SessionManager({ repoRoot: dir, baseUrl: () => 'http://127.0.0.1:3000' })
     const first = manager.openSession(a)
     const second = manager.openSession(b)
 
@@ -35,7 +47,7 @@ describe('SessionManager', () => {
     const filePath = join(dir, 'plan.md')
     await writeFile(filePath, '# Plan\n', 'utf8')
 
-    const manager = new SessionManager({ baseUrl: () => 'http://127.0.0.1:3000' })
+    const manager = new SessionManager({ repoRoot: dir, baseUrl: () => 'http://127.0.0.1:3000' })
     const first = manager.openSession(filePath)
     const second = manager.openSession(filePath)
 
@@ -48,7 +60,7 @@ describe('SessionManager', () => {
     const filePath = join(dir, 'plan.md')
     await writeFile(filePath, '# Plan\n', 'utf8')
 
-    const manager = new SessionManager()
+    const manager = new SessionManager({ repoRoot: dir })
     const opened = manager.openSession(filePath)
     const connected = manager.connect(opened.sessionId)
     manager.heartbeat(opened.sessionId, connected.clientId)
@@ -62,7 +74,7 @@ describe('SessionManager', () => {
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-manager-'))
     const filePath = join(dir, 'plan.md')
     await writeFile(filePath, '# Plan\n', 'utf8')
-    const manager = new SessionManager({ now: () => now })
+    const manager = new SessionManager({ repoRoot: dir, now: () => now })
     manager.openSession(filePath)
 
     now = new Date('2026-05-05T12:10:00.000Z')
@@ -71,10 +83,13 @@ describe('SessionManager', () => {
 
   it('done writes final markdown content to .agent.md and closes only that session', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-session-'))
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
     const filePath = join(dir, 'plan.md')
+    const statePath = sidecarPath(filePath, dir, { XDG_STATE_HOME: xdg })
     await writeFile(filePath, '# Plan\n\nFinal content.\n', 'utf8')
+    await mkdir(dirname(statePath), { recursive: true })
     await writeFile(
-      sidecarPath(filePath),
+      statePath,
       JSON.stringify({
         version: 4,
         annotations: [],
@@ -83,12 +98,14 @@ describe('SessionManager', () => {
     )
 
     const manager = new SessionManager({
+      repoRoot: dir,
+      env: { XDG_STATE_HOME: xdg },
       now: () => new Date('2026-05-05T12:00:00.000Z'),
     })
     const opened = manager.openSession(filePath)
     const done = await manager.done(opened.sessionId)
 
-    expect(done.outputPath).toBe(join(dir, 'plan.agent.md'))
+    expect(done.outputPath).toBe(outputPathFor(dir, filePath, { XDG_STATE_HOME: xdg }))
     await expect(readFile(done.outputPath, 'utf8')).resolves.toBe('# Plan\n\nFinal content.\n')
     expect(() => manager.getSession(opened.sessionId)).toThrow(/Session not found/)
   })
@@ -98,7 +115,7 @@ describe('SessionManager', () => {
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-manager-'))
     const filePath = join(dir, 'plan.md')
     await writeFile(filePath, '# Plan\n', 'utf8')
-    const manager = new SessionManager({ now: () => now })
+    const manager = new SessionManager({ repoRoot: dir, now: () => now })
     const opened = manager.openSession(filePath)
     await manager.done(opened.sessionId)
 

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, join, resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { basename, dirname, resolve } from 'node:path'
 import type { Annotation } from '../../types/annotation.js'
 import type { SessionResponse } from '../../types/api.js'
 import {
@@ -14,6 +14,7 @@ import { readDocument, saveDocument } from './document.js'
 import { rewriteItems } from './rewrite.js'
 import type { AiConfig, RewriteItem, RewriteResultEntry } from '../../types/api.js'
 import type { PlanItemState } from '../../types/plan.js'
+import { exportPathFor } from '../paths.js'
 
 export interface ClientState {
   id: string
@@ -24,6 +25,7 @@ export interface ClientState {
 export interface DocumentSession {
   id: string
   filePath: string
+  repoRoot: string
   sidecarPath: string
   outputPath: string
   status: 'active' | 'closing' | 'closed'
@@ -35,12 +37,16 @@ export interface DocumentSession {
 }
 
 export interface SessionManagerOptions {
+  repoRoot?: string
+  env?: NodeJS.ProcessEnv
   now?: () => Date
   baseUrl?: () => string
   getAiConfig?: () => AiConfig
 }
 
 export class SessionManager {
+  private readonly repoRoot: string
+  private readonly env: NodeJS.ProcessEnv
   private readonly now: () => Date
   private readonly baseUrl: () => string
   private readonly getAiConfig: (() => AiConfig) | undefined
@@ -51,6 +57,8 @@ export class SessionManager {
   private hasEverHadActiveSession = false
 
   constructor(options: SessionManagerOptions = {}) {
+    this.repoRoot = resolve(options.repoRoot ?? process.cwd())
+    this.env = options.env ?? process.env
     this.now = options.now ?? (() => new Date())
     this.baseUrl = options.baseUrl ?? (() => 'http://127.0.0.1:0')
     this.getAiConfig = options.getAiConfig
@@ -75,8 +83,9 @@ export class SessionManager {
     const session: DocumentSession = {
       id,
       filePath: absolutePath,
-      sidecarPath: sidecarPath(absolutePath),
-      outputPath: outputPathFor(absolutePath),
+      repoRoot: this.repoRoot,
+      sidecarPath: sidecarPath(absolutePath, this.repoRoot, this.env),
+      outputPath: outputPathFor(this.repoRoot, absolutePath, this.env),
       status: 'active',
       startedAt: now,
       lastActivityAt: now,
@@ -152,12 +161,12 @@ export class SessionManager {
   async readAnnotations(id: string): Promise<Annotation[]> {
     const session = this.getSession(id)
     this.touch(session)
-    return readAnnotations(session.filePath)
+    return readAnnotations(session.filePath, session.repoRoot, this.env)
   }
 
   async writeAnnotations(id: string, annotations: Annotation[]): Promise<void> {
     const session = this.getSession(id)
-    await writeAnnotations(session.filePath, annotations)
+    await writeAnnotations(session.filePath, annotations, session.repoRoot, this.env)
     session.dirty = true
     this.touch(session)
   }
@@ -165,19 +174,19 @@ export class SessionManager {
   async readPlanState(id: string): Promise<PlanItemState[]> {
     const session = this.getSession(id)
     this.touch(session)
-    return readPlanState(session.filePath)
+    return readPlanState(session.filePath, session.repoRoot, this.env)
   }
 
   async writePlanState(id: string, planState: PlanItemState[]): Promise<void> {
     const session = this.getSession(id)
-    await writePlanState(session.filePath, planState)
+    await writePlanState(session.filePath, planState, session.repoRoot, this.env)
     session.dirty = true
     this.touch(session)
   }
 
   async rewrite(id: string, fullDoc: string, items: RewriteItem[]): Promise<RewriteResultEntry[]> {
     const session = this.getSession(id)
-    const existing = await readAnnotations(session.filePath)
+    const existing = await readAnnotations(session.filePath, session.repoRoot, this.env)
     this.touch(session)
     const aiConfig = this.getAiConfig?.()
     if (!aiConfig) throw new Error('AI config unavailable')
@@ -191,6 +200,7 @@ export class SessionManager {
       await saveDocument(session.filePath, content)
     }
     const finalContent = await readFile(session.filePath, 'utf8')
+    await mkdir(dirname(session.outputPath), { recursive: true })
     await writeFile(session.outputPath, finalContent, 'utf8')
     session.exportedAt = this.now().toISOString()
     session.dirty = false
@@ -219,12 +229,12 @@ export class SessionManager {
   }
 }
 
-export function outputPathFor(filePath: string): string {
-  const dir = dirname(filePath)
-  const base = basename(filePath)
-  const ext = extname(base)
-  const stem = ext ? base.slice(0, -ext.length) : base
-  return join(dir, `${stem}.agent.md`)
+export function outputPathFor(
+  repoRoot: string,
+  filePath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return exportPathFor(repoRoot, filePath, env)
 }
 
 function toResponse(session: DocumentSession): SessionResponse {
