@@ -22,6 +22,7 @@ export interface DiffModalProps {
   attempt?: number
   onAccept: () => void
   onCancel: () => void
+  onDiscard: () => void
   onReprompt: (newInstruction: string) => void
 }
 
@@ -43,7 +44,7 @@ function splitDiff(oldText: string, newText: string): DiffSplit {
 }
 
 export function DiffModal(props: DiffModalProps) {
-  const { isOpen, annotation, onAccept, onCancel, onReprompt } = props
+  const { isOpen, annotation, onAccept, onCancel, onDiscard, onReprompt } = props
 
   const [repromptText, setRepromptText] = useState('')
 
@@ -141,6 +142,9 @@ export function DiffModal(props: DiffModalProps) {
 
           <div className="modal-section reprompt-section">
             <div className="reprompt">
+              <button className="secondary discard" onClick={onDiscard}>
+                放弃
+              </button>
               <textarea
                 rows={1}
                 placeholder="继续修改..."

@@ -1669,6 +1669,18 @@ mark.anno.decided {
   white-space: nowrap;
 }
 
+.reprompt button.secondary {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.reprompt button.secondary:hover {
+  border-color: var(--muted);
+  color: var(--fg);
+}
+
 .reprompt .kbd {
   margin-left: 6px;
   color: currentColor;

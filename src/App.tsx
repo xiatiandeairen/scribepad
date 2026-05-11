@@ -563,6 +563,10 @@ export function App(): JSX.Element {
     if (decidingModalFor) applyRewrite(decidingModalFor, false)
   }, [decidingModalFor, applyRewrite])
 
+  const handleDiscardRewrite = useCallback((): void => {
+    if (decidingModalFor) handleDelete(decidingModalFor)
+  }, [decidingModalFor, handleDelete])
+
   // Close only dismisses the modal. It does not change annotation state:
   // AI-returned cards remain reopenable, and in-flight reprompts keep running.
   const handleCloseModal = useCallback((): void => {
@@ -798,6 +802,7 @@ export function App(): JSX.Element {
         annotation={decidingAnnotation}
         onAccept={handleAccept}
         onCancel={handleCloseModal}
+        onDiscard={handleDiscardRewrite}
         onReprompt={handleReprompt}
       />
 

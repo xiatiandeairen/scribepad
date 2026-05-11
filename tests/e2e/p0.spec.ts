@@ -202,7 +202,7 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('.anno-card')).toHaveCount(0)
   })
 
-  test('P0.4 关闭 diff 不写回文档，批注仍保持 AI 已返回可重开', async ({ page }) => {
+  test('P0.4 放弃 diff 不写回文档，并移除批注', async ({ page }) => {
     await mockRewrite(page)
     await page.goto('/')
     await waitForReaderReady(page)
@@ -213,15 +213,12 @@ test.describe('P0 product flows', () => {
 
     await page.locator('mark.anno').click()
     await expect(page.locator('.diff-modal')).toBeVisible()
-    await page.keyboard.press('Escape')
+    await page.locator('.diff-modal button.discard', { hasText: '放弃' }).click()
 
     await expect(page.locator('.diff-modal')).not.toBeVisible()
     await expect(page.locator('.reader')).not.toContainText(`${selected} [改写]`)
-    await expect(page.locator('mark.anno.deciding')).toHaveText(selected)
-    await expect(page.locator('.anno-card.deciding')).toContainText('AI 已返回')
-
-    await page.locator('.anno-card.deciding').click()
-    await expect(page.locator('.diff-modal .row-add')).toContainText(`${selected} [改写]`)
+    await expect(page.locator('mark.anno')).toHaveCount(0)
+    await expect(page.locator('.anno-card')).toHaveCount(0)
   })
 
   test('P0.5 open 批注可被拍板为 decided，刷新后仍保持锁定', async ({ page }) => {
