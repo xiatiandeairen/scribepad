@@ -548,7 +548,7 @@ button.danger {
   position: relative;
 }
 
-.reader .plan-block-active {
+.reader .plan-block-hover {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
   border-radius: 6px;
 }
@@ -1078,10 +1078,14 @@ mark.anno.decided {
   text-align: left;
 }
 
-.review-point:hover,
-.review-point.active {
+.review-point:hover {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.review-point.flash {
+  border-color: #64748b;
+  background: #f8fafc;
 }
 
 .review-point-check {

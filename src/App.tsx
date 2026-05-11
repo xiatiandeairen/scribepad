@@ -91,7 +91,7 @@ export function App(): JSX.Element {
   const [path, setPath] = useState<string>('')
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [planState, setPlanState] = useState<PlanItemState[]>([])
-  const [activePlanItemId, setActivePlanItemId] = useState<string | undefined>(undefined)
+  const [hoveredPlanItemId, setHoveredPlanItemId] = useState<string | undefined>(undefined)
   const [rightRailTab, setRightRailTab] = useState<'review' | 'comments'>('review')
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [selectionAnchor, setSelectionAnchor] = useState<Anchor | null>(null)
@@ -437,7 +437,6 @@ export function App(): JSX.Element {
   )
 
   const handleSelectPlanItem = useCallback((id: string): void => {
-    setActivePlanItemId(id)
     requestAnimationFrame(() => {
       document
         .querySelector<HTMLElement>(`[data-plan-item-id="${cssEscape(id)}"]`)
@@ -468,7 +467,7 @@ export function App(): JSX.Element {
       await savePlanState([], documentSessionId)
       setContent(pendingReviewNormalization)
       setPlanState([])
-      setActivePlanItemId(undefined)
+      setHoveredPlanItemId(undefined)
       setPendingReviewNormalization(null)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'apply normalized review failed'
@@ -700,7 +699,7 @@ export function App(): JSX.Element {
           annotations={annotations}
           planItems={planReadiness.items}
           activeId={activeId}
-          activePlanItemId={activePlanItemId}
+          highlightedPlanItemId={hoveredPlanItemId}
           onSelectionAnchor={handleSelectionAnchor}
           onCreateAnchor={handleCreateFromAnchor}
           onMarkClick={handleMarkClick}
@@ -733,9 +732,9 @@ export function App(): JSX.Element {
                 <PlanPanel
                   sections={planReadiness.sections}
                   summary={planReadiness.summary}
-                  activeItemId={activePlanItemId}
                   normalizing={normalizingReview}
                   onSelectItem={handleSelectPlanItem}
+                  onHoverItem={setHoveredPlanItemId}
                   onToggleLocked={handleTogglePlanItemLocked}
                   onNormalize={() => void handleNormalizeReview()}
                 />

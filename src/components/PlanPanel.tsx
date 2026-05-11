@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type {
   PlanItem,
   PlanItemStatus,
@@ -9,16 +9,35 @@ import type {
 interface PlanPanelProps {
   sections: PlanReviewSection[]
   summary: PlanReadinessSummary
-  activeItemId?: string | undefined
   normalizing?: boolean
   onSelectItem: (id: string) => void
+  onHoverItem: (id: string | undefined) => void
   onToggleLocked: (item: PlanItem) => void
   onNormalize: () => void
 }
 
 export function PlanPanel(props: PlanPanelProps): JSX.Element {
-  const { sections, summary, activeItemId } = props
+  const { sections, summary } = props
+  const { onHoverItem } = props
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
+  const [flashedItemId, setFlashedItemId] = useState<string | undefined>(undefined)
+  const flashTimeoutRef = useRef<number | null>(null)
+  const triggerFlash = (id: string): void => {
+    if (flashTimeoutRef.current !== null) window.clearTimeout(flashTimeoutRef.current)
+    setFlashedItemId(id)
+    flashTimeoutRef.current = window.setTimeout(() => {
+      setFlashedItemId(undefined)
+      flashTimeoutRef.current = null
+    }, 160)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (flashTimeoutRef.current !== null) window.clearTimeout(flashTimeoutRef.current)
+      onHoverItem(undefined)
+    }
+  }, [onHoverItem])
+
   const reviewTotal = summary.total
   const reviewLocked = summary.locked
   const reviewOpen = summary.total - summary.locked
@@ -111,7 +130,14 @@ export function PlanPanel(props: PlanPanelProps): JSX.Element {
                 {section.items.length > 0 && (
                   <div className="review-points">
                     {section.items.map((item) =>
-                      renderPoint({ item, activeItemId, props, expandedIds, setExpandedIds }),
+                      renderPoint({
+                        item,
+                        props,
+                        expandedIds,
+                        setExpandedIds,
+                        flashedItemId,
+                        triggerFlash,
+                      }),
                     )}
                   </div>
                 )}
@@ -122,10 +148,11 @@ export function PlanPanel(props: PlanPanelProps): JSX.Element {
                       <>
                         {renderPoint({
                           item: group.checkpoint,
-                          activeItemId,
                           props,
                           expandedIds,
                           setExpandedIds,
+                          flashedItemId,
+                          triggerFlash,
                           details: group.details,
                         })}
                       </>
@@ -135,7 +162,14 @@ export function PlanPanel(props: PlanPanelProps): JSX.Element {
                     {group.items.length > 0 && (
                       <div className="review-points">
                         {group.items.map((item) =>
-                          renderPoint({ item, activeItemId, props, expandedIds, setExpandedIds }),
+                          renderPoint({
+                            item,
+                            props,
+                            expandedIds,
+                            setExpandedIds,
+                            flashedItemId,
+                            triggerFlash,
+                          }),
                         )}
                       </div>
                     )}
@@ -171,28 +205,40 @@ function DetailList(props: { details: PlanItem[] }): JSX.Element {
 
 interface RenderPointArgs {
   item: PlanItem
-  activeItemId: string | undefined
   props: PlanPanelProps
   expandedIds: ReadonlySet<string>
   setExpandedIds: (updater: (prev: Set<string>) => Set<string>) => void
+  flashedItemId: string | undefined
+  triggerFlash: (id: string) => void
   details?: PlanItem[]
 }
 
 function renderPoint(args: RenderPointArgs): JSX.Element {
-  const { item, activeItemId, props, expandedIds, setExpandedIds, details = [] } = args
+  const {
+    item,
+    props,
+    expandedIds,
+    setExpandedIds,
+    flashedItemId,
+    triggerFlash,
+    details = [],
+  } = args
   const hasDetails = details.length > 0
   const expanded = expandedIds.has(item.id)
   return (
     <div
       key={item.id}
-      className={`review-point ${item.status} ${activeItemId === item.id ? 'active' : ''}`}
+      className={`review-point ${item.status} ${flashedItemId === item.id ? 'flash' : ''}`}
       style={{ '--point-indent': `${(item.depth ?? 0) * 14}px` } as CSSProperties}
+      onMouseEnter={() => props.onHoverItem(item.id)}
+      onMouseLeave={() => props.onHoverItem(undefined)}
     >
       <button
         type="button"
         className="review-point-check"
         aria-label={`${statusLabel(item.status)}: ${item.text}`}
         onClick={() => {
+          triggerFlash(item.id)
           props.onSelectItem(item.id)
           props.onToggleLocked(item)
         }}
@@ -202,6 +248,7 @@ function renderPoint(args: RenderPointArgs): JSX.Element {
         className="review-point-main"
         aria-expanded={hasDetails ? expanded : undefined}
         onClick={() => {
+          triggerFlash(item.id)
           props.onSelectItem(item.id)
           if (!hasDetails) return
           setExpandedIds((prev) => {

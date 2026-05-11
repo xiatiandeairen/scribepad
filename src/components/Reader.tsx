@@ -33,7 +33,7 @@ export interface ReaderProps {
   annotations: Annotation[]
   planItems?: PlanItem[]
   activeId?: string | undefined
-  activePlanItemId?: string | undefined
+  highlightedPlanItemId?: string | undefined
   /** Drag-select reported a fresh anchor (or null when selection cleared). */
   onSelectionAnchor: (anchor: Anchor | null) => void
   /** Click landed on a bare sentence span. */
@@ -156,8 +156,8 @@ export function Reader(props: ReaderProps): JSX.Element {
       }
     }
 
-    for (const block of root.querySelectorAll<HTMLElement>('.plan-block, .plan-block-active')) {
-      block.classList.remove('plan-block', 'plan-block-active')
+    for (const block of root.querySelectorAll<HTMLElement>('.plan-block, .plan-block-hover')) {
+      block.classList.remove('plan-block', 'plan-block-hover')
       block.removeAttribute('data-plan-item-id')
       block.removeAttribute('data-plan-kind')
       block.removeAttribute('data-plan-status')
@@ -181,7 +181,7 @@ export function Reader(props: ReaderProps): JSX.Element {
       firstBlock.setAttribute('data-plan-item-id', item.id)
       for (const block of blocks) {
         block.classList.add('plan-block')
-        if (props.activePlanItemId === item.id) block.classList.add('plan-block-active')
+        if (props.highlightedPlanItemId === item.id) block.classList.add('plan-block-hover')
         block.setAttribute('data-plan-kind', item.kind)
         block.setAttribute('data-plan-status', item.status)
       }
@@ -194,7 +194,7 @@ export function Reader(props: ReaderProps): JSX.Element {
         status: item.status,
         label: planMarkerText(item),
         ariaLabel: `${item.title}: ${item.text}`,
-        active: props.activePlanItemId === item.id,
+        active: props.highlightedPlanItemId === item.id,
         top: Math.max(0, firstRect.top - frameRect.top),
         height: Math.max(22, lastRect.bottom - firstRect.top),
         lineLeft: railX,
@@ -207,7 +207,7 @@ export function Reader(props: ReaderProps): JSX.Element {
     props.annotations,
     props.activeId,
     props.planItems,
-    props.activePlanItemId,
+    props.highlightedPlanItemId,
     layoutVersion,
   ])
 

@@ -162,6 +162,25 @@ test.describe('Review UI', () => {
     await expect(page.locator('.plan-rail-marker.locked').first()).toBeVisible()
   })
 
+  test('review item hover previews source text and click feedback is transient', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await waitForReaderReady(page)
+
+    const point = page.locator('.review-point', { hasText: '服务端 Session' }).first()
+    await point.hover()
+    await expect(page.locator('.plan-block-hover')).not.toHaveCount(0)
+
+    await page.mouse.move(20, 20)
+    await expect(page.locator('.plan-block-hover')).toHaveCount(0)
+
+    await point.click()
+    await expect(point).toHaveClass(/flash/)
+    await expect(point).not.toHaveClass(/active/)
+    await expect(point).not.toHaveClass(/flash/, { timeout: 1000 })
+  })
+
   test('locked plan item becomes stale after source text changes and can be relocked', async ({
     page,
   }) => {
