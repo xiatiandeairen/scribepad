@@ -74,7 +74,7 @@ describe('sidecar plan state', () => {
     await writeFile(docPath, '# Plan\n', 'utf8')
 
     await writePlanState(docPath, [
-      { id: 'risk:1', status: 'locked', textHash: 'abc', updatedAt: '2026-05-06' },
+      { id: 'scope:1', status: 'locked', textHash: 'abc', updatedAt: '2026-05-06' },
     ])
 
     const annotation: Annotation = {
@@ -94,7 +94,7 @@ describe('sidecar plan state', () => {
     await writeAnnotations(docPath, [annotation])
 
     await expect(readPlanState(docPath)).resolves.toEqual([
-      { id: 'risk:1', status: 'locked', textHash: 'abc', updatedAt: '2026-05-06' },
+      { id: 'scope:1', status: 'locked', textHash: 'abc', updatedAt: '2026-05-06' },
     ])
     const raw = JSON.parse(await readFile(sidecarPath(docPath), 'utf8')) as {
       annotations: unknown[]

@@ -1,23 +1,26 @@
-export type PlanItemKind =
-  | 'goal'
-  | 'scope'
-  | 'behavior'
-  | 'task'
-  | 'verification'
-  | 'risk'
-  | 'decision'
-  | 'open-question'
+export type PlanItemKind = 'goal' | 'scope' | 'behavior' | 'verification' | 'open-question'
 
 export type PlanItemStatus = 'open' | 'locked' | 'stale'
 
-export type ReviewMode = 'auto' | 'structured' | 'lightweight' | 'annotation-only'
+export type ReviewNodeRole = 'checkpoint' | 'detail'
+
+export type ReviewMode = 'auto' | 'structured' | 'annotation-only'
 
 export type EffectiveReviewMode = Exclude<ReviewMode, 'auto'>
+
+export type ReviewStructureQuality = 'ready' | 'partial' | 'unavailable'
 
 export interface PlanItem {
   id: string
   kind: PlanItemKind
   title: string
+  sectionTitle?: string
+  sectionOrder?: number
+  groupTitle?: string
+  groupOrder?: number
+  itemOrder?: number
+  depth?: number
+  role: ReviewNodeRole
   text: string
   textHash: string
   blockId: string
@@ -33,6 +36,31 @@ export interface PlanItemState {
   updatedAt: string
 }
 
+export interface PlanReviewGroup {
+  id: string
+  title: string
+  sectionKind: PlanItemKind
+  sectionTitle: string
+  order: number
+  checkpoint?: PlanItem | undefined
+  items: PlanItem[]
+  details: PlanItem[]
+}
+
+export interface PlanReviewSection {
+  id: string
+  kind: PlanItemKind
+  title: string
+  order: number
+  items: PlanItem[]
+  details: PlanItem[]
+  groups: PlanReviewGroup[]
+  total: number
+  locked: number
+  open: number
+  stale: number
+}
+
 export interface PlanReadinessIssue {
   id: string
   severity: 'warning' | 'info'
@@ -42,6 +70,8 @@ export interface PlanReadinessIssue {
 
 export interface PlanReadinessSummary {
   mode: EffectiveReviewMode
+  structureQuality: ReviewStructureQuality
+  missingRequiredSections: PlanItemKind[]
   total: number
   resolved: number
   locked: number

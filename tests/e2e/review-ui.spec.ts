@@ -7,6 +7,34 @@ import { clearSidecar, waitForReaderReady } from './helpers'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SAMPLE_PATH = resolve(__dirname, '../../sample.md')
 let sampleBaseline = ''
+const REVIEW_SAMPLE = [
+  '# 示例:auth 重构计划',
+  '',
+  '## 目标',
+  '',
+  '- 会话能够即时撤销，且敏感载荷不暴露在客户端。',
+  '',
+  '## 范围',
+  '',
+  '- 包含 web 端登录、API 网关鉴权、第三方 OAuth 回调。',
+  '- 不包含移动端登录。',
+  '',
+  '## 方案',
+  '',
+  '### 服务端 Session',
+  '',
+  '- 登录成功后服务端在 Redis 中创建 session 记录。',
+  '  - session 记录包含用户身份、过期时间、设备信息。',
+  '- 网关用 session ID 查询实际状态。',
+  '',
+  '## 验收',
+  '',
+  '- 登出、风控、密码修改时会话立刻失效。',
+  '',
+  '## 待确认',
+  '',
+  '- 是否接入外部 IdP。',
+].join('\n')
 
 async function lockedPlanStateCount(page: Page): Promise<number> {
   return page.evaluate(async () => {
@@ -46,7 +74,7 @@ test.describe('Review UI', () => {
 
   test.beforeEach(() => {
     clearSidecar()
-    writeFileSync(SAMPLE_PATH, sampleBaseline, 'utf8')
+    writeFileSync(SAMPLE_PATH, REVIEW_SAMPLE, 'utf8')
   })
 
   test.afterEach(() => {
@@ -69,7 +97,26 @@ test.describe('Review UI', () => {
 
     await expect(page.locator('.review-style-picker')).toHaveCount(0)
     await expect(page.locator('.plan-panel')).toBeVisible()
-    await expect(page.locator('.executive-outline')).toBeVisible()
+    await expect(page.locator('.review-outline')).toBeVisible()
+    await expect(page.locator('.review-point', { hasText: '服务端 Session' })).toHaveCount(1)
+    await expect(
+      page.locator('.review-detail', {
+        hasText: '登录成功后服务端在 Redis 中创建 session 记录。',
+      }),
+    ).toHaveCount(0)
+    await page.locator('.review-point-main', { hasText: '服务端 Session' }).click()
+    await expect(
+      page.locator('.review-detail', {
+        hasText: '登录成功后服务端在 Redis 中创建 session 记录。',
+      }),
+    ).toBeVisible()
+    await page.locator('.review-point-main', { hasText: '服务端 Session' }).click()
+    await expect(
+      page.locator('.review-detail', {
+        hasText: '登录成功后服务端在 Redis 中创建 session 记录。',
+      }),
+    ).toHaveCount(0)
+    await expect(page.locator('.review-point-check').first()).toBeVisible()
     await expect(page.locator('.review-tab-panel')).not.toBeEmpty()
 
     expect(consoleErrors).toEqual([])
@@ -93,17 +140,17 @@ test.describe('Review UI', () => {
     }
   })
 
-  test('executive outline item locks and persists', async ({ page }) => {
+  test('review outline item locks and persists', async ({ page }) => {
     await page.goto('/')
     await waitForReaderReady(page)
 
-    await expect(page.locator('.executive-outline')).toBeVisible()
-    await page.locator('.executive-point').first().click()
+    await expect(page.locator('.review-outline')).toBeVisible()
+    await page.locator('.review-point-check').first().click()
     await expect.poll(() => lockedPlanStateCount(page)).toBe(1)
 
     await page.reload()
     await waitForReaderReady(page)
-    await expect(page.locator('.executive-point.locked').first()).toBeVisible()
+    await expect(page.locator('.review-point.locked').first()).toBeVisible()
     await expect(page.locator('.plan-rail-marker.locked').first()).toBeVisible()
   })
 
@@ -113,16 +160,20 @@ test.describe('Review UI', () => {
     await page.goto('/')
     await waitForReaderReady(page)
 
-    await page.locator('.executive-point').first().click()
+    await page.locator('.review-point-check').first().click()
     await expect.poll(() => lockedPlanStateCount(page)).toBe(1)
 
-    await saveDocumentWithReplacement(page, '当前业务背景是：', '当前业务背景是：更新后')
+    await saveDocumentWithReplacement(
+      page,
+      '会话能够即时撤销，且敏感载荷不暴露在客户端。',
+      '会话能够即时撤销，且敏感载荷不暴露在客户端和日志中。',
+    )
     await page.reload()
     await waitForReaderReady(page)
 
-    await expect(page.locator('.executive-point.stale').first()).toBeVisible()
-    await page.locator('.executive-point.stale').first().click()
-    await expect(page.locator('.executive-point.stale')).toHaveCount(0)
+    await expect(page.locator('.review-point.stale').first()).toBeVisible()
+    await page.locator('.review-point.stale .review-point-check').first().click()
+    await expect(page.locator('.review-point.stale')).toHaveCount(0)
     await expect.poll(() => lockedPlanStateCount(page)).toBe(1)
   })
 
@@ -150,7 +201,7 @@ test.describe('Review UI', () => {
     const firstSignalSection =
       ((await page.locator('.signal-item strong').first().textContent()) ?? '').split(' ')[0] ?? ''
     await expect(
-      page.locator('.executive-section-title', { hasText: firstSignalSection }).first(),
+      page.locator('.review-section-title', { hasText: firstSignalSection }).first(),
     ).toBeVisible()
   })
 })

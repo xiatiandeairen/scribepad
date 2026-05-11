@@ -13,11 +13,16 @@ import type {
   OpenSessionResponse,
   PlanStateRequest,
   PlanStateResponse,
+  ReviewNormalizeRequest,
   RewriteRequest,
   RewriteResponse,
   SaveRequest,
   SaveResponse,
 } from '../../types/api.js'
+import {
+  normalizeReviewPlanRequest,
+  ReviewNormalizeInputError,
+} from '../services/review-normalize.js'
 
 export function sessionsRoute(ctx: AppContext) {
   const app = new Hono()
@@ -128,6 +133,17 @@ export function sessionsRoute(ctx: AppContext) {
     } catch (e) {
       const err: ErrorResponse = { error: String((e as Error).message ?? e) }
       return c.json(err, 500)
+    }
+  })
+
+  app.post('/sessions/:sessionId/review-normalize', async (c) => {
+    const req = (await c.req.json()) as ReviewNormalizeRequest
+    try {
+      ctx.sessionManager.getSession(c.req.param('sessionId'))
+      return c.json(await normalizeReviewPlanRequest(req))
+    } catch (e) {
+      const err: ErrorResponse = { error: String((e as Error).message ?? e) }
+      return c.json(err, e instanceof ReviewNormalizeInputError ? 400 : 500)
     }
   })
 

@@ -41,6 +41,7 @@ import {
   getSession,
   heartbeatDocumentSession,
   heartbeatSession,
+  normalizeReviewDocument,
   requestRewrite,
   saveAnnotations,
   saveDocument,
@@ -49,6 +50,7 @@ import {
 import { remapAnchorsAfterRewrite, resolveAnchorToSourceRange } from './lib/anchor'
 import { renderMarkdown } from './lib/markdown'
 import { inspectPlan } from './lib/plan-inspector'
+import { validateNormalizedReview } from './lib/review-normalize-validation'
 import type { SessionResponse } from '../types/api'
 import type { PlanItem, PlanItemState, PlanItemStatus } from '../types/plan'
 
@@ -69,13 +71,11 @@ function cssEscape(value: string): string {
 }
 
 const SIGNAL_SECTION_LABELS: Partial<Record<PlanItem['kind'], string>> = {
-  goal: 'Goal',
-  scope: 'Scope',
-  behavior: 'Behavior',
-  decision: 'Decisions',
-  risk: 'Risks',
-  task: 'Tasks',
-  verification: 'Verification',
+  goal: '目标',
+  scope: '范围',
+  behavior: '方案',
+  verification: '验收',
+  'open-question': '待确认',
 }
 
 type HeaderSignal = {
@@ -105,6 +105,8 @@ export function App(): JSX.Element {
   const [session, setSession] = useState<SessionResponse | null>(null)
   const [sessionClosed, setSessionClosed] = useState(false)
   const [closingSession, setClosingSession] = useState(false)
+  const [normalizingReview, setNormalizingReview] = useState(false)
+  const [pendingReviewNormalization, setPendingReviewNormalization] = useState<string | null>(null)
 
   // ── Persistence helper ─────────────────────────────────────────────────
   // Centralised so every optimistic update goes through one error-handling path.
@@ -445,6 +447,35 @@ export function App(): JSX.Element {
 
   const planReadiness = useMemo(() => inspectPlan(content, planState, 'auto'), [content, planState])
 
+  const handleNormalizeReview = useCallback(async (): Promise<void> => {
+    try {
+      setNormalizingReview(true)
+      const result = await normalizeReviewDocument(content, documentSessionId)
+      validateNormalizedReview(content, result.content)
+      setPendingReviewNormalization(result.content)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'normalize review failed'
+      setError(message)
+    } finally {
+      setNormalizingReview(false)
+    }
+  }, [content, documentSessionId])
+
+  const handleApplyReviewNormalization = useCallback(async (): Promise<void> => {
+    if (!pendingReviewNormalization) return
+    try {
+      await saveDocument(pendingReviewNormalization, documentSessionId)
+      await savePlanState([], documentSessionId)
+      setContent(pendingReviewNormalization)
+      setPlanState([])
+      setActivePlanItemId(undefined)
+      setPendingReviewNormalization(null)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'apply normalized review failed'
+      setError(message)
+    }
+  }, [documentSessionId, pendingReviewNormalization])
+
   const handleDone = useCallback(async (): Promise<void> => {
     try {
       setClosingSession(true)
@@ -567,13 +598,12 @@ export function App(): JSX.Element {
       ? 0
       : Math.round((planReadiness.summary.resolved / planReadiness.summary.total) * 100)
   const headerSignals = planReadiness.items
-    .filter((item) => SIGNAL_SECTION_LABELS[item.kind])
     .filter((item) => item.status === 'open' || item.status === 'stale')
     .reduce<HeaderSignal[]>((signals, item) => {
       const section = SIGNAL_SECTION_LABELS[item.kind]
       if (!section) return signals
       const existing = signals.find((signal) => signal.id === item.kind)
-      const severity = item.status === 'stale' || item.kind === 'risk' ? 'warning' : 'info'
+      const severity = item.status === 'stale' ? 'warning' : 'info'
       if (existing) {
         if (severity === 'warning') existing.severity = 'warning'
         return signals
@@ -701,11 +731,13 @@ export function App(): JSX.Element {
             <div className="review-tab-panel" role="tabpanel">
               {rightRailTab === 'review' ? (
                 <PlanPanel
-                  items={planReadiness.items}
+                  sections={planReadiness.sections}
                   summary={planReadiness.summary}
                   activeItemId={activePlanItemId}
+                  normalizing={normalizingReview}
                   onSelectItem={handleSelectPlanItem}
                   onToggleLocked={handleTogglePlanItemLocked}
+                  onNormalize={() => void handleNormalizeReview()}
                 />
               ) : (
                 <Sidebar
@@ -769,6 +801,45 @@ export function App(): JSX.Element {
         onCancel={handleCloseModal}
         onReprompt={handleReprompt}
       />
+
+      {pendingReviewNormalization && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setPendingReviewNormalization(null)}
+        >
+          <section
+            className="review-normalize-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="规范化文档预览"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="review-normalize-modal-head">
+              <div>
+                <span>Normalize Preview</span>
+                <strong>确认后才会写回文档</strong>
+              </div>
+              <button
+                type="button"
+                aria-label="关闭规范化预览"
+                onClick={() => setPendingReviewNormalization(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <pre className="review-normalize-preview">{pendingReviewNormalization}</pre>
+            <div className="review-normalize-actions">
+              <button type="button" onClick={() => setPendingReviewNormalization(null)}>
+                取消
+              </button>
+              <button type="button" onClick={() => void handleApplyReviewNormalization()}>
+                应用到文档
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {error && (
         <div

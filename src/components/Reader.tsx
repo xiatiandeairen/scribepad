@@ -153,17 +153,22 @@ export function Reader(props: ReaderProps): JSX.Element {
     }
 
     for (const item of props.planItems ?? []) {
-      const block = root.querySelector<HTMLElement>(`[data-block-id="${cssEscape(item.blockId)}"]`)
-      if (!block) continue
-      const blockLeft = block.getBoundingClientRect().left - root.getBoundingClientRect().left
+      const blocks = blocksForPlanItem(root, item)
+      const markerBlock = blocks[0]
+      if (!markerBlock) continue
+      const markerBlockLeft =
+        markerBlock.getBoundingClientRect().left - root.getBoundingClientRect().left
       const railX = Number.parseFloat(window.getComputedStyle(root).paddingLeft) - 22
-      block.style.setProperty('--plan-line-left', `${railX - blockLeft}px`)
-      block.style.setProperty('--plan-marker-left', `${railX - 94 - blockLeft}px`)
-      block.classList.add('plan-block')
-      if (props.activePlanItemId === item.id) block.classList.add('plan-block-active')
-      block.setAttribute('data-plan-item-id', item.id)
-      block.setAttribute('data-plan-kind', item.kind)
-      block.setAttribute('data-plan-status', item.status)
+      for (const block of blocks) {
+        const blockLeft = block.getBoundingClientRect().left - root.getBoundingClientRect().left
+        block.style.setProperty('--plan-line-left', `${railX - blockLeft}px`)
+        block.classList.add('plan-block')
+        if (props.activePlanItemId === item.id) block.classList.add('plan-block-active')
+        block.setAttribute('data-plan-item-id', item.id)
+        block.setAttribute('data-plan-kind', item.kind)
+        block.setAttribute('data-plan-status', item.status)
+      }
+      markerBlock.style.setProperty('--plan-marker-left', `${railX - 94 - markerBlockLeft}px`)
 
       const marker = document.createElement('button')
       marker.type = 'button'
@@ -181,7 +186,7 @@ export function Reader(props: ReaderProps): JSX.Element {
         lock.textContent = '🔒'
         marker.append(lock)
       }
-      block.prepend(marker)
+      markerBlock.prepend(marker)
     }
   }, [baseHtml, props.annotations, props.activeId, props.planItems, props.activePlanItemId])
 
@@ -338,6 +343,21 @@ export function Reader(props: ReaderProps): JSX.Element {
 function cssEscape(value: string): string {
   if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value)
   return value.replace(/"/g, '\\"')
+}
+
+function blocksForPlanItem(root: HTMLElement, item: PlanItem): HTMLElement[] {
+  const blocks = [
+    ...root.querySelectorAll<HTMLElement>('[data-block-id][data-src-start][data-src-end]'),
+  ].filter((block) => {
+    const start = Number(block.dataset.srcStart)
+    const end = Number(block.dataset.srcEnd)
+    return (
+      Number.isFinite(start) && Number.isFinite(end) && start < item.srcEnd && end > item.srcStart
+    )
+  })
+  if (blocks.length > 0) return blocks
+  const block = root.querySelector<HTMLElement>(`[data-block-id="${cssEscape(item.blockId)}"]`)
+  return block ? [block] : []
 }
 
 function planMarkerText(item: PlanItem): string {

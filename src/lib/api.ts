@@ -18,6 +18,7 @@ import type {
   FileResponse,
   HeartbeatSessionRequest,
   PlanStateResponse,
+  ReviewNormalizeResponse,
   RewriteRequest,
   RewriteResponse,
   SaveResponse,
@@ -103,6 +104,18 @@ export async function requestRewrite(
     body: JSON.stringify(req),
   })
   return parseOrThrow<RewriteResponse>(res)
+}
+
+export async function normalizeReviewDocument(
+  fullDoc: string,
+  sessionId?: string,
+): Promise<ReviewNormalizeResponse> {
+  const res = await fetch(scoped('/review-normalize', sessionId), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fullDoc }),
+  })
+  return parseOrThrow<ReviewNormalizeResponse>(res)
 }
 
 export async function getSession(): Promise<SessionResponse> {

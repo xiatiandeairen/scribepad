@@ -17,12 +17,11 @@
 
 ### 会做
 
-- 规则化抽取 plan 信息点：`goal / scope / task / verification / risk / decision / open-question`。
+- 规则化抽取 plan 信息点：`goal / scope / behavior / verification / open-question`。
 - 自动判定 review mode：
   - `structured`：完整 readiness 检查。
-  - `lightweight`：只展示识别到的信息点和温和提示。
   - `annotation-only`：隐藏 plan review，保留批注/改写/拍板。
-- 信息点状态：`open / confirmed / locked / stale`。
+- 信息点状态：`open / locked / stale`。
 - 主阅读区左侧 status rail：在原文位置展示信息点类型和状态。
 - 右侧 `Plan Review`：进度、issue、分组信息点、当前信息点详情与操作。
 - sidecar 持久化 `planState`，并保留现有 `annotations`。
@@ -46,7 +45,7 @@ flowchart LR
   Inspector --> Mode[ReviewMode]
   Inspector --> Rail[Inline Status Rail]
   Inspector --> Panel[Plan Review]
-  Panel --> Action[confirm / lock / reopen]
+  Panel --> Action[lock / reopen]
   Action --> API[/api/plan-state]
   API --> Sidecar[.{file}.annotations.json]
 ```
@@ -72,7 +71,7 @@ flowchart LR
   "annotations": [],
   "planState": [
     {
-      "id": "risk:120",
+      "id": "scope:120",
       "status": "locked",
       "textHash": "abc",
       "updatedAt": "2026-05-06T00:00:00.000Z"
@@ -85,7 +84,7 @@ flowchart LR
 
 ### 3.4 Readiness
 
-强检查只在 `structured` 模式启用。`lightweight` 只展示已有信息点，不强报缺目标/缺范围。`annotation-only` 只提示已切换批注模式。
+强检查只在 `structured` 模式启用。无法识别 Review 目录时进入 `annotation-only`，只提示用户手动触发规范化。
 
 ## 4. 实现任务
 

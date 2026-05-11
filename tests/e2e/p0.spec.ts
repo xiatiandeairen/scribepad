@@ -23,6 +23,25 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SAMPLE_PATH = resolve(__dirname, '../../sample.md')
 let sampleBaseline = ''
+const STRUCTURED_REVIEW_SAMPLE = [
+  '# 示例:auth 重构计划',
+  '',
+  '## 目标',
+  '',
+  '- 会话能够即时撤销，且敏感载荷不暴露在客户端。',
+  '',
+  '## 范围',
+  '',
+  '- 包含 web 端登录、API 网关鉴权、第三方 OAuth 回调。',
+  '',
+  '## 方案',
+  '',
+  '- 服务端在 Redis 中创建 session 记录。',
+  '',
+  '## 验收',
+  '',
+  '- 登出后会话立刻失效。',
+].join('\n')
 
 function restoreSample(): void {
   writeFileSync(SAMPLE_PATH, sampleBaseline, 'utf8')
@@ -105,18 +124,18 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('.reader h1')).toBeVisible()
     await expect(page.locator('.reader h2').first()).toBeVisible()
     await expect(page.locator('.plan-panel')).toBeVisible()
-    await expect(page.locator('.executive-outline')).toBeVisible()
-    await expect(page.locator('.executive-point').first()).toBeVisible()
-    await expect(page.locator('.plan-rail-marker').first()).toBeVisible()
+    await expect(page.locator('.review-normalize-empty')).toBeVisible()
+    await expect(page.getByRole('button', { name: '规范化文档' })).toBeVisible()
     await page.getByRole('tab', { name: /Comments/ }).click()
     await expect(page.locator('.sidebar .empty')).toBeVisible()
   })
 
   test('P0.1b plan 信息点可以点击锁定，并在刷新后保持', async ({ page }) => {
+    writeFileSync(SAMPLE_PATH, STRUCTURED_REVIEW_SAMPLE, 'utf8')
     await page.goto('/')
     await waitForReaderReady(page)
 
-    await page.locator('.executive-point').first().click()
+    await page.locator('.review-point-check').first().click()
 
     await expect
       .poll(async () =>
@@ -130,7 +149,7 @@ test.describe('P0 product flows', () => {
 
     await page.reload()
     await waitForReaderReady(page)
-    await expect(page.locator('.executive-point.locked').first()).toBeVisible()
+    await expect(page.locator('.review-point.locked').first()).toBeVisible()
     await expect(page.locator('.plan-rail-marker.locked').first()).toBeVisible()
   })
 

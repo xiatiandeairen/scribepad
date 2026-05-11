@@ -62,6 +62,15 @@ export interface RewriteResponse {
   results: RewriteResultEntry[]
 }
 
+// POST /api/review-normalize
+export interface ReviewNormalizeRequest {
+  fullDoc: string
+}
+
+export interface ReviewNormalizeResponse {
+  content: string
+}
+
 // GET /api/session
 export interface SessionResponse {
   id: string

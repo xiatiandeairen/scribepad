@@ -113,7 +113,7 @@ types/
 | 信息点状态持久化 | sidecar `planState` 字段，类型在 `types/plan.ts` |
 | plan state API | `server/routes/plan-state.ts` + session-scoped `/api/sessions/:id/plan-state` |
 
-约束：0.2.0 的状态表示用户对信息点的处理状态，不是 AI 判断真伪；AI auto-audit 仍放 v0.3+。文档结构较弱时必须降级到 lightweight 或 annotation-only，避免把轻量 plan 当完整执行计划检查。
+约束：0.2.0 的状态表示用户对信息点的处理状态，不是 AI 判断真伪；AI auto-audit 仍放 v0.3+。无法识别 Review 目录时必须降级到 annotation-only，由用户手动触发规范化后再进入结构化检查。
 
 ## v0.3 候选方向(由 v0.2 dogfood gate 决定)
 

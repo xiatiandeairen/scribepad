@@ -14,6 +14,7 @@ import { fileRoute } from './routes/file.js'
 import { annotationsRoute } from './routes/annotations.js'
 import { planStateRoute } from './routes/plan-state.js'
 import { rewriteRoute } from './routes/rewrite.js'
+import { reviewNormalizeRoute } from './routes/review-normalize.js'
 import { sessionRoute } from './routes/session.js'
 import { sessionsRoute } from './routes/sessions.js'
 import type { SessionManager } from './services/session-manager.js'
@@ -34,6 +35,7 @@ export function createApp(ctx: AppContext) {
   app.route('/api', annotationsRoute(ctx))
   app.route('/api', planStateRoute(ctx))
   app.route('/api', rewriteRoute(ctx))
+  app.route('/api', reviewNormalizeRoute(ctx))
   app.route('/api', sessionRoute(ctx))
   app.route('/api', sessionsRoute(ctx))
 
