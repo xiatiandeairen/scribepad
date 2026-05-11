@@ -442,6 +442,10 @@ button.danger {
   padding: 12px;
 }
 
+.reader-frame {
+  position: relative;
+}
+
 .reader {
   position: relative;
   background: var(--surface);
@@ -544,56 +548,39 @@ button.danger {
   position: relative;
 }
 
-.reader .plan-block::after {
-  content: '';
-  position: absolute;
-  top: 0.18em;
-  left: var(--plan-line-left, -22px);
-  width: 4px;
-  height: calc(100% - 0.36em);
-  min-height: 22px;
-  border-radius: 999px;
-  background: var(--border);
-}
-
-.reader .plan-block[data-plan-status='open']::after {
-  background: #f97316;
-}
-
-.reader .plan-block[data-plan-status='locked']::after {
-  background: #16a34a;
-}
-
-.reader .plan-block[data-plan-status='stale']::after {
-  background: #ef4444;
-}
-
 .reader .plan-block-active {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
   border-radius: 6px;
 }
 
+.plan-rail-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
 .plan-rail-marker {
   position: absolute;
-  left: var(--plan-marker-left, -116px);
-  top: 0.22em;
-  width: 88px;
-  min-width: 88px;
-  min-height: 24px;
+  top: var(--plan-rail-top, 0);
+  left: 0;
+  width: 132px;
+  height: var(--plan-rail-height, 24px);
+  min-height: 22px;
   padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
   border: none;
   background: transparent;
   color: var(--muted);
   font-size: 11px;
   line-height: 1;
   box-shadow: none;
+  pointer-events: none;
 }
 
 .plan-rail-label {
+  position: absolute;
+  top: 0;
+  left: var(--plan-marker-left, 8px);
   display: inline-flex;
   align-items: center;
   height: 22px;
@@ -605,15 +592,23 @@ button.danger {
   font-size: 11px;
   line-height: 1;
   box-shadow: var(--shadow-sm);
+  pointer-events: auto;
 }
 
-.plan-rail-lock {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  color: var(--muted);
-  font-size: 12px;
+.plan-rail-line {
+  position: absolute;
+  top: 0;
+  left: var(--plan-line-left, 102px);
+  width: 4px;
+  height: 100%;
+  min-height: 22px;
+  border-radius: 999px;
+  background: var(--border);
+  pointer-events: auto;
+}
+
+.plan-rail-marker.locked .plan-rail-line {
+  background: #16a34a;
 }
 
 .plan-rail-marker.locked .plan-rail-label {
@@ -628,6 +623,10 @@ button.danger {
   background: #fff7ed;
 }
 
+.plan-rail-marker.open .plan-rail-line {
+  background: #f97316;
+}
+
 .plan-rail-marker.stale .plan-rail-label {
   color: #9a3412;
   border-color: #d4d4d8;
@@ -635,8 +634,17 @@ button.danger {
   font-weight: 700;
 }
 
+.plan-rail-marker.stale .plan-rail-line {
+  background: #ef4444;
+}
+
 .plan-rail-marker:hover .plan-rail-label {
   border-color: var(--accent);
+}
+
+.plan-rail-marker:hover .plan-rail-line,
+.plan-rail-marker.active .plan-rail-line {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 /* Mark background communicates annotation state. */

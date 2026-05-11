@@ -22,7 +22,7 @@
  *   - mark:     click inside an existing `<mark data-anno-id>` →
  *               onMarkClick(id) so App can activate / open modal.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Annotation, AnnotationState, Anchor } from '../../types/annotation'
 import type { PlanItem } from '../../types/plan'
 import { renderMarkdown } from '../lib/markdown'
@@ -70,7 +70,10 @@ function markClassFor(anno: Annotation, isActive: boolean): string {
 }
 
 export function Reader(props: ReaderProps): JSX.Element {
+  const frameRef = useRef<HTMLDivElement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const [railRanges, setRailRanges] = useState<PlanRailRange[]>([])
+  const [layoutVersion, setLayoutVersion] = useState(0)
   // Cache the renderMarkdown output so we can restore the unmarked HTML
   // before each decoration pass — re-running renderMarkdown on every effect
   // would work but wastes parsing cycles for typical doc sizes.
@@ -101,9 +104,10 @@ export function Reader(props: ReaderProps): JSX.Element {
   // ── Mark overlay pass ──────────────────────────────────────────────────
   // Reset to clean base HTML each pass, then re-apply marks. Idempotent —
   // running this multiple times produces the same DOM.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = rootRef.current
-    if (!root) return
+    const frame = frameRef.current
+    if (!root || !frame) return
 
     if (root.innerHTML !== baseHtmlRef.current) {
       root.innerHTML = baseHtmlRef.current
@@ -152,43 +156,73 @@ export function Reader(props: ReaderProps): JSX.Element {
       }
     }
 
+    for (const block of root.querySelectorAll<HTMLElement>('.plan-block, .plan-block-active')) {
+      block.classList.remove('plan-block', 'plan-block-active')
+      block.removeAttribute('data-plan-item-id')
+      block.removeAttribute('data-plan-kind')
+      block.removeAttribute('data-plan-status')
+    }
+
+    const nextRailRanges: PlanRailRange[] = []
+    const frameRect = frame.getBoundingClientRect()
+    const rootRect = root.getBoundingClientRect()
+    const railX =
+      rootRect.left -
+      frameRect.left +
+      Number.parseFloat(window.getComputedStyle(root).paddingLeft) -
+      22
+
     for (const item of props.planItems ?? []) {
       const blocks = blocksForPlanItem(root, item)
-      const markerBlock = blocks[0]
-      if (!markerBlock) continue
-      const markerBlockLeft =
-        markerBlock.getBoundingClientRect().left - root.getBoundingClientRect().left
-      const railX = Number.parseFloat(window.getComputedStyle(root).paddingLeft) - 22
+      const firstBlock = blocks[0]
+      const lastBlock = blocks[blocks.length - 1]
+      if (!firstBlock || !lastBlock) continue
+
+      firstBlock.setAttribute('data-plan-item-id', item.id)
       for (const block of blocks) {
-        const blockLeft = block.getBoundingClientRect().left - root.getBoundingClientRect().left
-        block.style.setProperty('--plan-line-left', `${railX - blockLeft}px`)
         block.classList.add('plan-block')
         if (props.activePlanItemId === item.id) block.classList.add('plan-block-active')
-        block.setAttribute('data-plan-item-id', item.id)
         block.setAttribute('data-plan-kind', item.kind)
         block.setAttribute('data-plan-status', item.status)
       }
-      markerBlock.style.setProperty('--plan-marker-left', `${railX - 94 - markerBlockLeft}px`)
 
-      const marker = document.createElement('button')
-      marker.type = 'button'
-      marker.className = `plan-rail-marker ${item.kind} ${item.status}`
-      marker.setAttribute('data-plan-rail-id', item.id)
-      marker.setAttribute('aria-label', `${item.title}: ${item.text}`)
-      const label = document.createElement('span')
-      label.className = 'plan-rail-label'
-      label.textContent = planMarkerText(item)
-      marker.append(label)
-      if (item.status === 'locked') {
-        const lock = document.createElement('span')
-        lock.className = 'plan-rail-lock'
-        lock.setAttribute('aria-hidden', 'true')
-        lock.textContent = '🔒'
-        marker.append(lock)
-      }
-      markerBlock.prepend(marker)
+      const firstRect = firstBlock.getBoundingClientRect()
+      const lastRect = lastBlock.getBoundingClientRect()
+      nextRailRanges.push({
+        id: item.id,
+        kind: item.kind,
+        status: item.status,
+        label: planMarkerText(item),
+        ariaLabel: `${item.title}: ${item.text}`,
+        active: props.activePlanItemId === item.id,
+        top: Math.max(0, firstRect.top - frameRect.top),
+        height: Math.max(22, lastRect.bottom - firstRect.top),
+        lineLeft: railX,
+        labelLeft: railX - 94,
+      })
     }
-  }, [baseHtml, props.annotations, props.activeId, props.planItems, props.activePlanItemId])
+    setRailRanges(nextRailRanges)
+  }, [
+    baseHtml,
+    props.annotations,
+    props.activeId,
+    props.planItems,
+    props.activePlanItemId,
+    layoutVersion,
+  ])
+
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const requestMeasure = (): void => setLayoutVersion((version) => version + 1)
+    const observer = new ResizeObserver(requestMeasure)
+    observer.observe(root)
+    window.addEventListener('resize', requestMeasure)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', requestMeasure)
+    }
+  }, [])
 
   // ── selectionchange + visual snap to sentence boundaries ────────────────
   useEffect(() => {
@@ -329,15 +363,57 @@ export function Reader(props: ReaderProps): JSX.Element {
 
   return (
     <div
-      ref={rootRef}
-      className="reader"
-      onClick={onClick}
-      onPointerUp={onPointerUp}
-      // Initial paint installs the rendered markdown; the effect above
-      // overlays marks idempotently on subsequent renders.
-      dangerouslySetInnerHTML={{ __html: baseHtml }}
-    />
+      ref={frameRef}
+      className="reader-frame"
+      style={{ '--plan-rail-count': railRanges.length } as CSSProperties}
+    >
+      <div className="plan-rail-overlay" aria-label="Review checkpoints">
+        {railRanges.map((range) => (
+          <button
+            key={range.id}
+            type="button"
+            className={`plan-rail-marker ${range.kind} ${range.status} ${range.active ? 'active' : ''}`}
+            data-plan-rail-id={range.id}
+            aria-label={range.ariaLabel}
+            style={
+              {
+                '--plan-rail-top': `${range.top}px`,
+                '--plan-rail-height': `${range.height}px`,
+                '--plan-line-left': `${range.lineLeft}px`,
+                '--plan-marker-left': `${range.labelLeft}px`,
+              } as CSSProperties
+            }
+            onClick={() => onPlanItemClickRef.current?.(range.id)}
+          >
+            <span className="plan-rail-label">{range.label}</span>
+            <span className="plan-rail-line" aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+      <div
+        ref={rootRef}
+        className="reader"
+        onClick={onClick}
+        onPointerUp={onPointerUp}
+        // Initial paint installs the rendered markdown; the effect above
+        // overlays marks idempotently on subsequent renders.
+        dangerouslySetInnerHTML={{ __html: baseHtml }}
+      />
+    </div>
   )
+}
+
+interface PlanRailRange {
+  id: string
+  kind: PlanItem['kind']
+  status: PlanItem['status']
+  label: string
+  ariaLabel: string
+  active: boolean
+  top: number
+  height: number
+  lineLeft: number
+  labelLeft: number
 }
 
 function cssEscape(value: string): string {

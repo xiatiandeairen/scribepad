@@ -118,6 +118,14 @@ test.describe('Review UI', () => {
     ).toHaveCount(0)
     await expect(page.locator('.review-point-check').first()).toBeVisible()
     await expect(page.locator('.review-tab-panel')).not.toBeEmpty()
+    await expect(page.locator('.plan-rail-marker[aria-label*="服务端 Session"]')).toHaveCount(1)
+    await expect
+      .poll(async () =>
+        page
+          .locator('.plan-rail-marker[aria-label*="服务端 Session"] .plan-rail-line')
+          .evaluate((node) => node.getBoundingClientRect().height),
+      )
+      .toBeGreaterThan(70)
 
     expect(consoleErrors).toEqual([])
   })
