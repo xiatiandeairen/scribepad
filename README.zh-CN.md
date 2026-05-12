@@ -4,7 +4,7 @@
 
 scribepad 是给 vibe coding plan 用的本地 Review 面板。它把很长的 Markdown plan 变成一个可检查、可锁定、可交给 Codex / Claude Code 继续执行的浏览器工作台。
 
-<video src="./docs/assets/scribepad-review-demo.webm" controls width="100%"></video>
+![scribepad 演示](./docs/assets/scribepad-review-demo.gif)
 
 [查看演示录频](./docs/assets/scribepad-review-demo.webm)
 

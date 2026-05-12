@@ -4,7 +4,7 @@
 
 scribepad is a local review panel for vibe coding plans. It turns long Markdown plans into a focused browser review surface where you can inspect sections, lock checkpoints, and hand an approved document back to Codex or Claude Code.
 
-<video src="./docs/assets/scribepad-review-demo.webm" controls width="100%"></video>
+![scribepad demo](./docs/assets/scribepad-review-demo.gif)
 
 [Watch the demo recording](./docs/assets/scribepad-review-demo.webm)
 
