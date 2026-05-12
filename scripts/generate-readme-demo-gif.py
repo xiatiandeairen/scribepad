@@ -1,152 +1,233 @@
 from __future__ import annotations
 
+import os
+import shutil
+import signal
+import subprocess
+import tempfile
+import time
 from pathlib import Path
+from urllib.request import urlopen
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "assets" / "scribepad-review-demo.gif"
-W, H = 960, 540
+SAMPLE = ROOT / "sample.md"
+BASE_URL = "http://localhost:5173"
+GIF_W = 960
+GIF_H = 540
 
 
-def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    candidates = [
-        "/System/Library/Fonts/SFNS.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/Library/Fonts/Arial Bold.ttf" if bold else "/Library/Fonts/Arial.ttf",
-    ]
-    for candidate in candidates:
+CAPTURE_JS = r"""
+import { createRequire } from 'node:module';
+
+const require = createRequire(`${process.cwd()}/package.json`);
+const { chromium } = require('playwright');
+
+const outDir = process.argv[2];
+let index = 0;
+
+async function shot(page, hold = 4) {
+  const target = `${outDir}/${String(index).padStart(3, '0')}.png`;
+  await page.screenshot({ path: target });
+  index += 1;
+  for (let i = 1; i < hold; i += 1) {
+    await page.screenshot({ path: `${outDir}/${String(index).padStart(3, '0')}.png` });
+    index += 1;
+  }
+}
+
+async function createAnnotation(page, substring) {
+  const readerBox = await page.locator('.reader').boundingBox();
+  if (!readerBox) throw new Error('reader box not found');
+  await page.locator('.reader').dispatchEvent('pointerdown', {
+    pointerType: 'mouse',
+    pointerId: 1,
+    button: 0,
+    clientX: readerBox.x + 10,
+    clientY: readerBox.y + 10,
+    bubbles: true,
+  });
+  await page.evaluate((needle) => {
+    const root = document.querySelector('.reader');
+    if (!root) throw new Error('reader not found');
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let target = null;
+    let start = 0;
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const value = node.data;
+      const idx = value.indexOf(needle);
+      if (idx >= 0) {
+        target = node;
+        start = idx;
+        break;
+      }
+    }
+    if (!target) throw new Error(`text not found: ${needle}`);
+    const range = document.createRange();
+    range.setStart(target, start);
+    range.setEnd(target, start + needle.length);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+  }, substring);
+  await page.evaluate(({ clientX, clientY }) => {
+    document.dispatchEvent(
+      new PointerEvent('pointerup', {
+        pointerType: 'mouse',
+        pointerId: 1,
+        clientX,
+        clientY,
+        bubbles: true,
+      }),
+    );
+  }, { clientX: readerBox.x + 40, clientY: readerBox.y + 20 });
+}
+
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+
+await page.route('**/api/rewrite', async (route) => {
+  const body = route.request().postDataJSON();
+  const results = (body.items ?? []).map((item) => ({
+    id: item.id,
+    rewritten: item.selection.replace('session token', 'opaque server-side session ID'),
+  }));
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ results }),
+  });
+});
+
+await page.goto('http://localhost:5173');
+await page.locator('.reader p').first().waitFor({ state: 'visible' });
+await shot(page, 8);
+
+await page.locator('.review-point-check').first().click();
+await page.locator('.review-point.locked').first().waitFor({ state: 'visible' });
+await shot(page, 7);
+
+await page.getByRole('tab', { name: /Comments/ }).click();
+await shot(page, 5);
+
+await createAnnotation(page, 'session token');
+await page.locator('.anno-card').first().waitFor({ state: 'visible' });
+await shot(page, 8);
+
+const input = page.locator('.anno-card textarea').first();
+await input.fill('Make the session handling explicit');
+await shot(page, 4);
+await input.press('Enter');
+await page.locator('.anno-card.deciding').first().waitFor({ state: 'visible' });
+await shot(page, 8);
+
+await page.locator('.anno-card.deciding').first().click();
+await page.locator('.diff-modal').waitFor({ state: 'visible' });
+await shot(page, 10);
+
+await page.locator('.diff-modal button.primary', { hasText: '接受' }).first().click();
+await page.locator('.diff-modal').waitFor({ state: 'hidden' });
+await shot(page, 8);
+
+await browser.close();
+"""
+
+
+def wait_for_server(process: subprocess.Popen[bytes], log_path: Path) -> None:
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        if process.poll() is not None:
+            log = log_path.read_text(encoding="utf-8", errors="replace")
+            raise RuntimeError(f"server exited before becoming ready:\n{log}")
         try:
-            return ImageFont.truetype(candidate, size=size)
-        except OSError:
-            pass
-    return ImageFont.load_default()
+            with urlopen(BASE_URL, timeout=1) as response:
+                if response.status < 500:
+                    return
+        except Exception:
+            time.sleep(0.5)
+    log = log_path.read_text(encoding="utf-8", errors="replace")
+    raise RuntimeError(f"server did not become ready: {BASE_URL}\n{log}")
 
 
-TITLE = font(22, True)
-BODY = font(16)
-SMALL = font(13)
-MONO = font(14)
+def start_server(state_dir: Path, log_path: Path) -> subprocess.Popen[bytes]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "XDG_CONFIG_HOME": str(state_dir / "config"),
+            "XDG_STATE_HOME": str(state_dir / "state"),
+            "XDG_RUNTIME_DIR": str(state_dir / "runtime"),
+        }
+    )
+    for child in ["config", "state", "runtime"]:
+        (state_dir / child).mkdir(parents=True, exist_ok=True)
+    log_file = log_path.open("wb")
+    return subprocess.Popen(
+        ["npm", "run", "dev"],
+        cwd=ROOT,
+        env=env,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
 
 
-def rounded(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], fill: str, outline: str | None = None, radius: int = 12) -> None:
-    draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline)
+def stop_server(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=8)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=8)
 
 
-def text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], value: str, fill: str = "#24292f", fnt=BODY) -> None:
-    draw.text(xy, value, fill=fill, font=fnt)
-
-
-def base_frame() -> Image.Image:
-    img = Image.new("RGB", (W, H), "#f6f8fa")
-    draw = ImageDraw.Draw(img)
-    draw.rectangle((0, 0, W, H), fill="#f6f8fa")
-    rounded(draw, (42, 34, 918, 506), "#ffffff", "#d0d7de", 16)
-    draw.rounded_rectangle((42, 34, 918, 82), radius=16, fill="#24292f")
-    draw.rectangle((42, 58, 918, 82), fill="#24292f")
-    for i, color in enumerate(["#ff5f57", "#ffbd2e", "#28c840"]):
-        draw.ellipse((70 + i * 24, 53, 82 + i * 24, 65), fill=color)
-    text(draw, (132, 50), "scribepad", "#f6f8fa", TITLE)
-    text(draw, (245, 55), "Review long AI plans before implementation", "#8c959f", SMALL)
-    return img
-
-
-def draw_outline(draw: ImageDraw.ImageDraw, active: int, locked: set[int]) -> None:
-    rounded(draw, (66, 108, 300, 476), "#f6f8fa", "#d0d7de", 10)
-    text(draw, (88, 130), "Plan outline", "#24292f", TITLE)
-    items = [
-        "Problem framing",
-        "Implementation steps",
-        "Risk checkpoints",
-        "Handoff contract",
-    ]
-    for i, item in enumerate(items):
-        y = 180 + i * 62
-        fill = "#dbeafe" if i == active else "#ffffff"
-        outline = "#0969da" if i == active else "#d0d7de"
-        rounded(draw, (86, y, 280, y + 42), fill, outline, 8)
-        if i in locked:
-            draw.arc((105, y + 9, 121, y + 25), 180, 360, fill="#1f883d", width=3)
-            draw.rounded_rectangle((104, y + 19, 122, y + 32), radius=3, fill="#1f883d")
-            draw.rectangle((112, y + 25, 114, y + 29), fill="#ffffff")
-        else:
-            draw.ellipse((104, y + 12, 122, y + 30), outline="#8c959f", width=2)
-            draw.ellipse((110, y + 18, 116, y + 24), fill="#8c959f")
-        text(draw, (134, y + 13), item, "#24292f", SMALL)
-
-
-def draw_doc(draw: ImageDraw.ImageDraw, focus: int, locked: set[int], approved: bool) -> None:
-    rounded(draw, (326, 108, 646, 476), "#ffffff", "#d0d7de", 10)
-    text(draw, (352, 130), "docs/plan.md", "#24292f", TITLE)
-    sections = [
-        ("## Problem framing", ["Clarify the review gate before code.", "Keep decisions visible and explicit."]),
-        ("## Implementation steps", ["Parse Markdown into reviewable sections.", "Track locked checkpoints locally."]),
-        ("## Risk checkpoints", ["Do not continue without human approval.", "Export a clean agent-readable plan."]),
-        ("## Handoff contract", ["Return exactly one approved Markdown path.", "Let Codex or Claude continue from there."]),
-    ]
-    y = 178
-    for i, (heading, lines) in enumerate(sections):
-        if i == focus:
-            rounded(draw, (348, y - 8, 624, y + 67), "#fff8c5" if i not in locked else "#dafbe1", None, 8)
-        text(draw, (360, y), heading, "#0969da" if i == focus else "#57606a", MONO)
-        for j, line in enumerate(lines):
-            text(draw, (376, y + 24 + j * 18), line, "#24292f", SMALL)
-        y += 76
-    if approved:
-        rounded(draw, (430, 410, 540, 450), "#1f883d", None, 9)
-        text(draw, (459, 421), "Done", "#ffffff", BODY)
-
-
-def draw_panel(draw: ImageDraw.ImageDraw, step: int, lock_progress: float, approved: bool) -> None:
-    rounded(draw, (672, 108, 894, 476), "#f6f8fa", "#d0d7de", 10)
-    text(draw, (696, 130), "Review", "#24292f", TITLE)
-    labels = ["Inspect", "Lock", "Normalize", "Export"]
-    for i, label in enumerate(labels):
-        y = 182 + i * 54
-        active = i == step
-        rounded(draw, (696, y, 870, y + 36), "#dbeafe" if active else "#ffffff", "#0969da" if active else "#d0d7de", 8)
-        text(draw, (718, y + 9), label, "#0969da" if active else "#57606a", BODY)
-    if step == 1:
-        x = int(728 + lock_progress * 78)
-        draw.line((728, 394, 806, 394), fill="#8c959f", width=8)
-        draw.ellipse((x - 12, 382, x + 12, 406), fill="#1f883d")
-        text(draw, (824, 384), "locked", "#1f883d", SMALL)
-    elif step == 3 or approved:
-        rounded(draw, (714, 378, 854, 424), "#1f883d", None, 9)
-        text(draw, (742, 392), "Approved", "#ffffff", BODY)
-        text(draw, (704, 440), "~/.local/state/scribepad/...", "#57606a", SMALL)
-    else:
-        text(draw, (704, 386), "Human review stays in control.", "#57606a", SMALL)
-
-
-def frame_at(index: int) -> Image.Image:
-    phase = min(index // 18, 3)
-    local = index % 18
-    locked = {1, 2} if phase >= 2 else ({1} if phase == 1 and local > 9 else set())
-    approved = phase == 3 and local > 8
-    img = base_frame()
-    draw = ImageDraw.Draw(img)
-    draw_outline(draw, phase, locked)
-    draw_doc(draw, phase, locked, approved)
-    draw_panel(draw, phase, min(local / 12, 1), approved)
-    if not approved:
-        cursor_x = 700 + min(local, 12) * 9
-        cursor_y = 196 + phase * 54
-        draw.polygon([(cursor_x, cursor_y), (cursor_x, cursor_y + 28), (cursor_x + 19, cursor_y + 19)], fill="#24292f")
-    return img
-
-
-def main() -> None:
-    frames = [frame_at(i) for i in range(72)]
+def build_gif(frame_dir: Path) -> None:
+    frames = []
+    for frame_path in sorted(frame_dir.glob("*.png")):
+        frame = Image.open(frame_path).convert("RGB")
+        frame = frame.resize((GIF_W, GIF_H), Image.Resampling.LANCZOS)
+        frames.append(frame)
+    if not frames:
+        raise RuntimeError("no frames captured")
     frames[0].save(
         OUT,
         save_all=True,
         append_images=frames[1:],
-        duration=80,
+        duration=90,
         loop=0,
         optimize=True,
     )
+
+
+def main() -> None:
+    sample_before = SAMPLE.read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory(prefix="scribepad-readme-demo-") as tmp:
+        tmp_dir = Path(tmp)
+        state_dir = tmp_dir / "xdg"
+        frame_dir = tmp_dir / "frames"
+        frame_dir.mkdir(parents=True)
+        capture_script = tmp_dir / "capture.mjs"
+        capture_script.write_text(CAPTURE_JS, encoding="utf-8")
+        log_path = tmp_dir / "dev-server.log"
+        server = start_server(state_dir, log_path)
+        try:
+            wait_for_server(server, log_path)
+            subprocess.run(
+                ["node", str(capture_script), str(frame_dir)],
+                cwd=ROOT,
+                check=True,
+            )
+            build_gif(frame_dir)
+        finally:
+            stop_server(server)
+            SAMPLE.write_text(sample_before, encoding="utf-8")
+            shutil.rmtree(state_dir, ignore_errors=True)
     print(OUT)
 
 
