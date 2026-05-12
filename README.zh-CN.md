@@ -60,7 +60,20 @@ cat "$APPROVED_PLAN"
 
 ## 安装
 
-从仓库根目录执行：
+直接从 GitHub 运行：
+
+```bash
+npx --yes github:xiatiandeairen/scribepad docs/plan.md
+```
+
+作为 agent handoff 闸口：
+
+```bash
+APPROVED_PLAN=$(npx --yes github:xiatiandeairen/scribepad docs/plan.md --wait)
+cat "$APPROVED_PLAN"
+```
+
+如果要本地开发，从仓库根目录执行：
 
 ```bash
 npm install
@@ -68,16 +81,10 @@ npm run build
 npm link
 ```
 
-打开文档：
+再运行本地链接的 CLI：
 
 ```bash
 scribepad docs/plan.md
-```
-
-作为 agent handoff 闸口：
-
-```bash
-scribepad docs/plan.md --wait
 ```
 
 ## 开发

@@ -2,7 +2,15 @@
   "name": "scribepad",
   "version": "0.2.0",
   "type": "module",
-  "private": true,
+  "description": "Local-first Markdown review gate for AI coding plans.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiatiandeairen/scribepad.git"
+  },
+  "homepage": "https://github.com/xiatiandeairen/scribepad#readme",
+  "bugs": {
+    "url": "https://github.com/xiatiandeairen/scribepad/issues"
+  },
   "engines": {
     "node": ">=22"
   },
@@ -14,6 +22,7 @@
     "dev:client": "vite",
     "dev:server": "PORT=3001 tsx watch --include types --include server server/index.ts sample.md",
     "build": "vite build && tsc -p tsconfig.server.json",
+    "prepare": "npm run build",
     "start": "NODE_ENV=production node dist/server/index.js sample.md",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
@@ -23,6 +32,12 @@
     "lint:fix": "eslint . --fix && prettier --write .",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "README.zh-CN.md",
+    "docs/assets/scribepad-review-demo.gif"
+  ],
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "hono": "^4.6.14",

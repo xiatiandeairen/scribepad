@@ -60,7 +60,20 @@ That makes it easy for Codex, Claude Code, or any shell-driven agent to pause fo
 
 ## Install
 
-From the repo root:
+Run directly from GitHub:
+
+```bash
+npx --yes github:xiatiandeairen/scribepad docs/plan.md
+```
+
+For agent handoff:
+
+```bash
+APPROVED_PLAN=$(npx --yes github:xiatiandeairen/scribepad docs/plan.md --wait)
+cat "$APPROVED_PLAN"
+```
+
+For local development from the repo root:
 
 ```bash
 npm install
@@ -68,16 +81,10 @@ npm run build
 npm link
 ```
 
-Then run:
+Then run the linked CLI:
 
 ```bash
 scribepad docs/plan.md
-```
-
-For agent handoff:
-
-```bash
-scribepad docs/plan.md --wait
 ```
 
 ## Development

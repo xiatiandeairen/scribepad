@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * server/index.ts — CLI entry point.
  *

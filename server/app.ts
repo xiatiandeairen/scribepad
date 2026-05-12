@@ -9,7 +9,8 @@
 import { Hono } from 'hono'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { fileRoute } from './routes/file.js'
 import { annotationsRoute } from './routes/annotations.js'
 import { planStateRoute } from './routes/plan-state.js'
@@ -55,13 +56,14 @@ export function createApp(ctx: AppContext) {
   // and confuse developers who hit :3000 by mistake.
   const isProd = process.env.NODE_ENV === 'production'
   const shouldServeClient = isProd || ctx.serveClient === true
-  const clientDir = resolve(process.cwd(), 'dist/client')
+  const serverDir = dirname(fileURLToPath(import.meta.url))
+  const clientDir = resolve(serverDir, '../client')
   const indexHtml = resolve(clientDir, 'index.html')
 
   if (shouldServeClient && existsSync(clientDir)) {
-    app.use('/*', serveStatic({ root: './dist/client' }))
+    app.use('/*', serveStatic({ root: clientDir }))
     if (existsSync(indexHtml)) {
-      app.get('/*', serveStatic({ path: './dist/client/index.html' }))
+      app.get('/*', serveStatic({ path: indexHtml }))
     }
   } else if (shouldServeClient) {
     console.warn(`[scribepad] client build not found at ${clientDir}; run \`npm run build\` first.`)
