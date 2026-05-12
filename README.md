@@ -6,8 +6,6 @@ scribepad is a local review panel for vibe coding plans. It turns long Markdown 
 
 ![scribepad demo](./docs/assets/scribepad-review-demo.gif)
 
-[Watch the demo recording](./docs/assets/scribepad-review-demo.webm)
-
 ## Why
 
 AI coding agents are good at drafting plans, but the handoff is easy to lose:

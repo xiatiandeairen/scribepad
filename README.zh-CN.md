@@ -6,8 +6,6 @@ scribepad 是给 vibe coding plan 用的本地 Review 面板。它把很长的 M
 
 ![scribepad 演示](./docs/assets/scribepad-review-demo.gif)
 
-[查看演示录频](./docs/assets/scribepad-review-demo.webm)
-
 ## 为什么需要
 
 AI coding agent 很擅长起草 plan，但真实执行前经常有几个问题：
