@@ -2,51 +2,65 @@
 
 **English** | [中文](./README.zh-CN.md)
 
-scribepad is a local review panel for vibe coding plans. It turns long Markdown plans into a focused browser review surface where you can inspect sections, lock checkpoints, and hand an approved document back to Codex or Claude Code.
+Review and approve AI-generated engineering plans before your coding agent starts changing files.
+
+scribepad is a local-first Markdown review workspace for developers using Codex, Claude Code, Cursor, Aider, or other AI coding agents. It turns long `plan.md`, design docs, research notes, and implementation proposals into a browser review surface where you can read the plan, lock decisions, add comments, inspect AI rewrites, and hand an approved document back to the agent.
 
 ![scribepad demo](./docs/assets/scribepad-review-demo.gif)
 
-## Why
+## The Problem
 
-AI coding agents are good at drafting plans, but the handoff is easy to lose:
+AI coding agents can draft useful plans quickly, but the review handoff is still messy:
 
-- important decisions are buried in a long Markdown file;
-- repeated rewrites make it unclear what is final;
-- the agent may continue before the human has reviewed the plan;
-- the next agent needs a clean, approved document to execute.
+- a 200-line plan is hard to scan in a terminal or plain editor;
+- after a few rewrites, it is unclear which parts are final and which are still open;
+- an agent can silently change a decision you already approved;
+- the next agent run needs a clean plan, not a pile of chat history.
 
-scribepad acts as a local review gate between plan generation and implementation.
+scribepad gives you a review gate between "AI wrote the plan" and "AI starts implementation".
 
-## Core Workflow
+## What You Can Do
+
+- Open any local Markdown plan in a focused browser UI.
+- Review the generated outline and lock important checkpoints.
+- Select text, leave comments, and ask an AI CLI to rewrite a section.
+- Inspect a diff before accepting the rewrite into the source Markdown.
+- Use `--wait` so shell-driven agents pause until you click `Done`.
+- Export an agent-readable approved Markdown file from XDG state.
+
+## Who It Is For
+
+scribepad is useful if your workflow looks like this:
+
+- you ask Claude Code, Codex, Cursor, or Aider to write a plan before coding;
+- you keep specs, plans, design docs, or research notes as Markdown in your repo;
+- you want a human review step before an agent implements the plan;
+- you want decisions to stay visible instead of being buried in chat history.
+
+## Keywords
+
+AI coding plan review, Claude Code plan review, Codex workflow, vibe coding plan, Markdown review tool, local-first AI development workflow.
+
+## Workflow
 
 ```bash
 scribepad docs/plan.md --wait
 ```
 
-The command opens a browser review session and waits until you click `Done`.
+This opens a browser review session and waits until you click `Done`.
 
-After `Done`, stdout contains exactly one line: the approved exported Markdown path.
+After `Done`, stdout prints exactly one line: the approved exported Markdown path.
 
 ```bash
 APPROVED_PLAN=$(scribepad docs/plan.md --wait)
 cat "$APPROVED_PLAN"
 ```
 
-That makes it simple for Codex, Claude Code, or another shell-driven agent to pause for human review and then continue from the approved document.
-
-## Features
-
-- Review outline extracted from Markdown plans.
-- Checkpoints can be toggled between default and locked.
-- Unknown plan structure can be normalized from the review panel.
-- `--wait` blocks CLI execution until the user clicks `Done`.
-- Done exports an agent-readable Markdown file under XDG state.
-- Runtime, config, review state, and exports are stored outside the repo using XDG paths.
-- Works locally with Codex CLI and Claude Code CLI configuration.
+That makes it easy for Codex, Claude Code, or any shell-driven agent to pause for human approval and continue from the approved document.
 
 ## Install
 
-This repository is currently private/local-first. From the repo root:
+From the repo root:
 
 ```bash
 npm install

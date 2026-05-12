@@ -2,28 +2,52 @@
 
 [English](./README.md) | **中文**
 
-scribepad 是给 vibe coding plan 用的本地 Review 面板。它把很长的 Markdown plan 变成一个可检查、可锁定、可交给 Codex / Claude Code 继续执行的浏览器工作台。
+在 AI coding agent 真正开始改代码前，先把它写的 plan 看清楚、批注好、拍板确认。
+
+scribepad 是一个 local-first 的 Markdown Review 工作台，面向使用 Codex、Claude Code、Cursor、Aider 等 AI coding agent 的开发者。它把 `plan.md`、设计文档、调研记录、实现方案这类长文档变成浏览器里的 Review 页面：你可以阅读结构、锁定关键决定、选段批注、查看 AI 改写 diff，然后把确认后的文档交回给 agent 继续执行。
 
 ![scribepad 演示](./docs/assets/scribepad-review-demo.gif)
 
-## 为什么需要
+## 解决什么问题
 
-AI coding agent 很擅长起草 plan，但真实执行前经常有几个问题：
+AI coding agent 很会写 plan，但从“生成 plan”到“放心执行”之间经常断档：
 
-- 关键决定埋在长文档里，不容易快速确认；
-- 多轮改写后，不知道哪些内容已经定了；
-- agent 容易在用户确认前继续往下写代码；
-- 下一个 agent 需要一份干净、确认过的执行文档。
+- 200 行 Markdown plan 在 terminal / editor 里很难快速扫清楚；
+- 改写几轮之后，不知道哪些内容已经定了、哪些还在讨论；
+- agent 下一轮可能悄悄改掉你已经确认过的决定；
+- 下一个 agent run 需要的是干净的执行文档，不是一堆聊天历史。
 
-scribepad 的定位就是：放在“agent 产出 plan”和“agent 开始实现”之间，作为人的确认闸口。
+scribepad 的定位就是：放在“AI 写完 plan”和“AI 开始实现”之间，作为人的确认闸口。
 
-## 核心流程
+## 你可以做什么
+
+- 打开本地 Markdown plan，在浏览器里集中阅读。
+- 从文档中提取 Review outline，并锁定关键检查点。
+- 选中文本创建批注，让 AI CLI 改写某一段。
+- 在 diff modal 里确认改动，再写回源 Markdown。
+- 使用 `--wait` 让 shell 驱动的 agent 暂停，直到你点击 `Done`。
+- 导出一份 agent 可读取的、已经确认过的 Markdown 文档。
+
+## 适合谁
+
+如果你的工作流是这样，scribepad 会更有用：
+
+- 让 Claude Code、Codex、Cursor 或 Aider 先写 plan，再开始编码；
+- 把 spec、plan、design doc、research note 放在仓库里的 Markdown 文件中；
+- 希望 agent 实现前有一个明确的人类确认步骤；
+- 不想让关键决定散落在 chat history 里，过几天再也找不到。
+
+## Keywords
+
+AI coding plan review、Claude Code plan review、Codex workflow、vibe coding plan、Markdown review tool、local-first AI development workflow。
+
+## 使用流程
 
 ```bash
 scribepad docs/plan.md --wait
 ```
 
-命令会打开浏览器 Review 页面，并一直等待用户点击 `Done`。
+命令会打开浏览器 Review 页面，并一直等待你点击 `Done`。
 
 点击 `Done` 后，stdout 只输出一行：确认后的导出 Markdown 路径。
 
@@ -34,19 +58,9 @@ cat "$APPROVED_PLAN"
 
 这样 Codex、Claude Code 或任何 shell 驱动的 agent 都可以在这里停住，等用户确认，再读取确认后的文档继续执行。
 
-## 功能
-
-- 从 Markdown plan 中提取 Review outline。
-- 检查点支持 default / locked 两态切换。
-- 无法识别目录结构时，可在 Review 面板中手动触发规范化。
-- `--wait` 会阻塞 CLI，直到用户点击 `Done`。
-- Done 后导出 agent 可读取的 Markdown 文档。
-- runtime、config、review state、export 全部存放到 XDG 目录，不污染项目仓库。
-- 支持配置 Codex CLI 和 Claude Code CLI。
-
 ## 安装
 
-当前项目以本地优先为主。从仓库根目录执行：
+从仓库根目录执行：
 
 ```bash
 npm install
