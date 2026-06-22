@@ -16,12 +16,14 @@
  * callbacks supplied by the parent App coordinator. No api/* imports.
  */
 import { useRef, useState, type KeyboardEvent } from 'react'
-import type { Annotation } from '../../types/annotation'
+import type { Annotation, ThreadMessage, ThreadMessageKind } from '../../types/annotation'
 
 export interface SidebarProps {
   annotations: Annotation[]
   activeId?: string | undefined
   onSubmitInstruction: (id: string, instruction: string) => void
+  onAddNote: (id: string, text: string) => void
+  onDecide: (id: string, text: string) => void
   onLock: (id: string) => void
   onUnlock: (id: string) => void
   onDelete: (id: string) => void
@@ -49,6 +51,8 @@ export function Sidebar(props: SidebarProps): JSX.Element {
           anno={anno}
           isActive={props.activeId === anno.id}
           onSubmitInstruction={props.onSubmitInstruction}
+          onAddNote={props.onAddNote}
+          onDecide={props.onDecide}
           onLock={props.onLock}
           onUnlock={props.onUnlock}
           onDelete={props.onDelete}
@@ -63,6 +67,8 @@ interface CardProps {
   anno: Annotation
   isActive: boolean
   onSubmitInstruction: (id: string, instruction: string) => void
+  onAddNote: (id: string, text: string) => void
+  onDecide: (id: string, text: string) => void
   onLock: (id: string) => void
   onUnlock: (id: string) => void
   onDelete: (id: string) => void
@@ -72,6 +78,7 @@ interface CardProps {
 function AnnotationCard(props: CardProps): JSX.Element {
   const { anno } = props
   const variant = pickVariant(anno)
+  const [expanded, setExpanded] = useState(() => props.isActive || variant === 'draft')
 
   // Card-level class: base, variant tint (deciding/decided), and active highlight.
   const classes = ['anno-card']
@@ -80,41 +87,72 @@ function AnnotationCard(props: CardProps): JSX.Element {
   if (variant === 'decided') classes.push('decided')
   if (props.isActive) classes.push('active')
 
-  const handleCardClick = (): void => {
-    if (variant === 'deciding') props.onOpenModal(anno.id)
-  }
-
   return (
     <div
       className={classes.join(' ')}
       data-anno-id={anno.id}
-      onClick={handleCardClick}
-      role={variant === 'deciding' ? 'button' : undefined}
-      tabIndex={variant === 'deciding' ? 0 : undefined}
-      onKeyDown={(e) => {
+      onClick={(event) => {
         if (variant !== 'deciding') return
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          props.onOpenModal(anno.id)
-        }
+        const target = event.target as HTMLElement | null
+        if (target?.closest('button, textarea')) return
+        props.onOpenModal(anno.id)
       }}
     >
-      {variant === 'draft' ? (
-        <DraftRow anno={anno} onSubmit={props.onSubmitInstruction} onCancel={props.onDelete} />
-      ) : (
-        <div className="head">
-          {variant === 'thinking' && <span className="status-line thinking">codex 思考中…</span>}
-          {variant === 'deciding' && <span className="status-line deciding">AI 已返回</span>}
-          {variant === 'decided' && <span className="status-line">已锁定</span>}
-        </div>
+      <button
+        type="button"
+        className="anno-card-summary"
+        aria-expanded={expanded}
+        onClick={() => {
+          if (variant === 'deciding') {
+            props.onOpenModal(anno.id)
+            return
+          }
+          setExpanded((current) => !current)
+        }}
+      >
+        <span className="anno-card-title">{titleFor(anno)}</span>
+        <span className={`status-line ${variant}`}>{variantLabel(variant)}</span>
+      </button>
+      <p className="anno-card-excerpt">{latestSummary(anno)}</p>
+      {expanded && (
+        <>
+          <ThreadTimeline anno={anno} />
+          {variant === 'deciding' && (
+            <button
+              type="button"
+              className="thread-review-diff"
+              onClick={() => props.onOpenModal(anno.id)}
+            >
+              Review diff
+            </button>
+          )}
+          {variant !== 'decided' && (
+            <ThreadComposer
+              anno={anno}
+              onSubmitInstruction={props.onSubmitInstruction}
+              onAddNote={props.onAddNote}
+              onDecide={props.onDecide}
+              onCancel={props.onDelete}
+            />
+          )}
+          {variant === 'decided' && (
+            <div className="actions-row">
+              <button type="button" onClick={() => props.onUnlock(anno.id)}>
+                解除锁定
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
 }
 
-function DraftRow(props: {
+function ThreadComposer(props: {
   anno: Annotation
-  onSubmit: (id: string, instruction: string) => void
+  onSubmitInstruction: (id: string, instruction: string) => void
+  onAddNote: (id: string, text: string) => void
+  onDecide: (id: string, text: string) => void
   onCancel: (id: string) => void
 }): JSX.Element {
   // Local draft text per card; persists across re-renders until parent
@@ -129,21 +167,36 @@ function DraftRow(props: {
     el.style.height = `${el.scrollHeight}px`
   }
 
-  const submit = (): void => {
+  const submitRewrite = (): void => {
     const value = text.trim()
     if (value.length === 0) return
-    props.onSubmit(props.anno.id, value)
+    props.onSubmitInstruction(props.anno.id, value)
+    setText('')
+  }
+
+  const submitNote = (): void => {
+    const value = text.trim()
+    if (value.length === 0) return
+    props.onAddNote(props.anno.id, value)
+    setText('')
+  }
+
+  const submitDecision = (): void => {
+    const value = text.trim()
+    if (value.length === 0) return
+    props.onDecide(props.anno.id, value)
+    setText('')
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      submit()
+      submitRewrite()
     }
   }
 
   return (
-    <div className="draft-row">
+    <div className="draft-row thread-composer">
       <textarea
         ref={(el) => {
           textareaRef.current = el
@@ -162,8 +215,24 @@ function DraftRow(props: {
         <button
           type="button"
           className="icon-action confirm"
-          aria-label="提交批注"
-          onClick={submit}
+          aria-label="追加 note"
+          onClick={submitNote}
+        >
+          N
+        </button>
+        <button
+          type="button"
+          className="icon-action confirm"
+          aria-label="请求 AI 改写"
+          onClick={submitRewrite}
+        >
+          AI
+        </button>
+        <button
+          type="button"
+          className="icon-action confirm"
+          aria-label="写成决定并锁定"
+          onClick={submitDecision}
         >
           ✓
         </button>
@@ -178,6 +247,103 @@ function DraftRow(props: {
       </div>
     </div>
   )
+}
+
+function ThreadTimeline(props: { anno: Annotation }): JSX.Element {
+  const messages = messagesFor(props.anno)
+  if (messages.length === 0) {
+    return <div className="thread-empty">还没有 thread 记录。</div>
+  }
+
+  return (
+    <div className="thread-timeline">
+      {messages.map((message) => (
+        <div key={message.id} className={`thread-message ${message.kind}`}>
+          <div className="thread-message-meta">
+            <span>{messageKindLabel(message.kind)}</span>
+            <time dateTime={message.created_at}>{shortTime(message.created_at)}</time>
+          </div>
+          <p>{messageText(message)}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function messagesFor(anno: Annotation): ThreadMessage[] {
+  const messages = [...(anno.thread ?? [])]
+  if (messages.length === 0 && anno.instruction) {
+    messages.push(
+      legacyMessage('legacy-instruction', 'rewrite-request', anno.instruction, anno.created_at),
+    )
+  }
+  if (messages.length === 0 && anno.ai_suggestion) {
+    messages.push(
+      legacyMessage('legacy-suggestion', 'rewrite-result', anno.ai_suggestion, anno.created_at),
+    )
+  }
+  return messages
+}
+
+function legacyMessage(
+  id: string,
+  kind: ThreadMessageKind,
+  text: string,
+  createdAt: string,
+): ThreadMessage {
+  return {
+    id,
+    role: kind === 'rewrite-result' ? 'assistant' : 'user',
+    kind,
+    text,
+    created_at: createdAt,
+  }
+}
+
+function titleFor(anno: Annotation): string {
+  if (anno.target?.type === 'plan-item')
+    return `${kindLabel(anno.target.kind)} · ${anno.target.title}`
+  return '选区批注'
+}
+
+function latestSummary(anno: Annotation): string {
+  const messages = messagesFor(anno)
+  const latest = messages[messages.length - 1]
+  return messageText(latest).replace(/\s+/g, ' ').trim()
+}
+
+function messageText(message: ThreadMessage | undefined): string {
+  if (!message) return '还没有 thread 记录。'
+  if (message.kind === 'rewrite-result') return 'AI 已生成改写建议'
+  return message.text
+}
+
+function kindLabel(kind: string): string {
+  const labels: Record<string, string> = {
+    goal: '目标',
+    scope: '范围',
+    behavior: '方案',
+    verification: '验收',
+    'open-question': '待确认',
+  }
+  return labels[kind] ?? kind
+}
+
+function messageKindLabel(kind: ThreadMessageKind): string {
+  const labels: Record<ThreadMessageKind, string> = {
+    note: 'Note',
+    question: 'Question',
+    'rewrite-request': 'Rewrite',
+    'rewrite-result': 'AI',
+    decision: 'Decision',
+  }
+  return labels[kind]
+}
+
+function shortTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 type CardVariant = 'draft' | 'thinking' | 'deciding' | 'decided'
@@ -196,5 +362,18 @@ function pickVariant(anno: Annotation): CardVariant {
       return anno.ai_suggestion ? 'deciding' : 'thinking'
     case 'decided':
       return 'decided'
+  }
+}
+
+function variantLabel(variant: CardVariant): string {
+  switch (variant) {
+    case 'draft':
+      return 'Open'
+    case 'thinking':
+      return 'codex 思考中…'
+    case 'deciding':
+      return 'AI 已返回'
+    case 'decided':
+      return '已锁定'
   }
 }

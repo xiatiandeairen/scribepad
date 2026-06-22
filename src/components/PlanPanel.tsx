@@ -13,6 +13,7 @@ interface PlanPanelProps {
   onSelectItem: (id: string) => void
   onHoverItem: (id: string | undefined) => void
   onToggleLocked: (item: PlanItem) => void
+  onCreateThread: (item: PlanItem) => void
   onNormalize: () => void
 }
 
@@ -253,6 +254,20 @@ function renderPoint(args: RenderPointArgs): JSX.Element {
         }}
       >
         <span className="review-point-text">{item.text}</span>
+      </button>
+      <button
+        type="button"
+        className="review-point-comment"
+        aria-label={`创建 thread: ${item.text}`}
+        title="创建 thread"
+        onClick={(event) => {
+          event.stopPropagation()
+          triggerFlash(item.id)
+          props.onSelectItem(item.id)
+          props.onCreateThread(item)
+        }}
+      >
+        <span className="review-point-comment-icon" aria-hidden="true" />
       </button>
       {hasDetails ? (
         <button

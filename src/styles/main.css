@@ -1288,7 +1288,7 @@ mark.anno.decided {
   width: 100%;
   min-height: 38px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 28px 48px;
+  grid-template-columns: 22px minmax(0, 1fr) 28px 28px 48px;
   gap: 8px;
   align-items: center;
   padding: 7px 8px 7px calc(8px + var(--point-indent, 0px));
@@ -1377,6 +1377,48 @@ mark.anno.decided {
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.review-point-comment {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.review-point-comment:hover,
+.review-point-comment:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  outline-offset: 1px;
+}
+
+.review-point-comment-icon {
+  position: relative;
+  width: 13px;
+  height: 10px;
+  border: 1.6px solid currentColor;
+  border-radius: 4px;
+}
+
+.review-point-comment-icon::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  bottom: -4px;
+  width: 5px;
+  height: 5px;
+  border-left: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  background: inherit;
+  transform: skewY(-35deg);
 }
 
 .review-point-expand,
@@ -1500,6 +1542,42 @@ mark.anno.decided {
   border-color: var(--card-decided-border);
 }
 
+.anno-card-summary {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.anno-card-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.anno-card-excerpt {
+  margin: 6px 0 0;
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .anno-card .head {
   display: flex;
   justify-content: flex-start;
@@ -1512,7 +1590,8 @@ mark.anno.decided {
 .anno-card .draft-row {
   display: flex;
   align-items: flex-start;
-  padding-right: 16px;
+  margin-top: 10px;
+  padding-right: 72px;
 }
 
 .anno-card .input,
@@ -1549,7 +1628,7 @@ mark.anno.decided {
 }
 
 .anno-card .icon-action {
-  width: 22px;
+  min-width: 22px;
   height: 22px;
   display: inline-flex;
   align-items: center;
@@ -1562,6 +1641,12 @@ mark.anno.decided {
   font-size: 13px;
   line-height: 1;
   padding: 0;
+}
+
+.anno-card .icon-action[aria-label='请求 AI 改写'] {
+  width: 30px;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .anno-card .icon-action.confirm {
@@ -1587,6 +1672,68 @@ mark.anno.decided {
   color: var(--muted);
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.thread-timeline {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.thread-message {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+}
+
+.thread-message.decision {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.thread-message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.thread-message p {
+  margin: 5px 0 0;
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.thread-empty {
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.thread-review-diff {
+  margin-top: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #fdba74;
+  border-radius: 7px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .anno-card .status-line.thinking {

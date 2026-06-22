@@ -1,4 +1,4 @@
-import type { PlanItemState } from './plan.js'
+import type { PlanItemKind, PlanItemState } from './plan.js'
 
 /**
  * Annotation schema — source-range anchor.
@@ -26,6 +26,29 @@ export interface Anchor {
   text: string
 }
 
+export type AnnotationTarget =
+  | { type: 'selection' }
+  | { type: 'plan-item'; planItemId: string; kind: PlanItemKind; title: string }
+
+export type ThreadMessageRole = 'user' | 'assistant' | 'system'
+
+export type ThreadMessageKind =
+  | 'note'
+  | 'question'
+  | 'rewrite-request'
+  | 'rewrite-result'
+  | 'decision'
+
+export interface ThreadMessage {
+  id: string
+  role: ThreadMessageRole
+  kind: ThreadMessageKind
+  text: string
+  created_at: string
+  agent?: string
+  diff?: { before: string; after: string }
+}
+
 /**
  * AuditEntry — one row in an annotation's history log.
  * Captures the action, who did it, and (for rewrites) the diff.
@@ -41,6 +64,8 @@ export interface AuditEntry {
 export interface Annotation {
   id: string
   anchor: Anchor
+  target?: AnnotationTarget
+  thread?: ThreadMessage[]
   instruction?: string
   ai_suggestion?: string | null
   state: AnnotationState

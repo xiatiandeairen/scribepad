@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Annotation, Anchor, AnnotationStatus } from '../types/annotation'
+import type { Annotation, Anchor, AnnotationStatus, ThreadMessage } from '../types/annotation'
 import { Reader } from './components/Reader'
 import { Sidebar } from './components/Sidebar'
 import { DiffModal } from './components/DiffModal'
@@ -60,6 +60,25 @@ import type { PlanItem, PlanItemState, PlanItemStatus } from '../types/plan'
 function makeAnnotationId(): string {
   const rand = Math.random().toString(36).slice(2, 8)
   return `a-${Date.now()}-${rand}`
+}
+
+function makeThreadMessageId(): string {
+  const rand = Math.random().toString(36).slice(2, 8)
+  return `m-${Date.now()}-${rand}`
+}
+
+function threadMessage(
+  kind: ThreadMessage['kind'],
+  text: string,
+  role: ThreadMessage['role'] = 'user',
+): ThreadMessage {
+  return {
+    id: makeThreadMessageId(),
+    role,
+    kind,
+    text,
+    created_at: new Date().toISOString(),
+  }
 }
 
 function sessionIdFromLocation(): string | undefined {
@@ -492,6 +511,8 @@ export function App(): JSX.Element {
       const fresh: Annotation = {
         id: makeAnnotationId(),
         anchor,
+        target: { type: 'selection' },
+        thread: [],
         state: 'draft',
         status: 'open',
         history: [],
@@ -525,7 +546,15 @@ export function App(): JSX.Element {
       if (!target) return
 
       const thinking = annotations.map((a) =>
-        a.id === id ? { ...a, state: 'discussed' as const, instruction, ai_suggestion: null } : a,
+        a.id === id
+          ? {
+              ...a,
+              state: 'discussed' as const,
+              instruction,
+              ai_suggestion: null,
+              thread: [...(a.thread ?? []), threadMessage('rewrite-request', instruction)],
+            }
+          : a,
       )
       setAnnotations(thinking)
       setBusy((prev) => ({ ...prev, [id]: true }))
@@ -548,7 +577,16 @@ export function App(): JSX.Element {
         // setter — concurrent edits (delete, lock) are preserved.
         setAnnotations((prev) => {
           const next = prev.map((a) =>
-            a.id === id ? { ...a, ai_suggestion: result.rewritten } : a,
+            a.id === id
+              ? {
+                  ...a,
+                  ai_suggestion: result.rewritten,
+                  thread: [
+                    ...(a.thread ?? []),
+                    threadMessage('rewrite-result', result.rewritten, 'assistant'),
+                  ],
+                }
+              : a,
           )
           persistAnnotations(next)
           return next
@@ -575,6 +613,40 @@ export function App(): JSX.Element {
       }
     },
     [annotations, content, documentSessionId, persistAnnotations],
+  )
+
+  const handleAddNote = useCallback(
+    (id: string, text: string): void => {
+      const next = annotations.map((a) =>
+        a.id === id
+          ? {
+              ...a,
+              state: a.state === 'decided' ? a.state : ('discussed' as const),
+              thread: [...(a.thread ?? []), threadMessage('note', text)],
+            }
+          : a,
+      )
+      setAnnotations(next)
+      persistAnnotations(next)
+    },
+    [annotations, persistAnnotations],
+  )
+
+  const handleDecide = useCallback(
+    (id: string, text: string): void => {
+      const next = annotations.map((a) =>
+        a.id === id
+          ? {
+              ...a,
+              state: 'decided' as const,
+              thread: [...(a.thread ?? []), threadMessage('decision', text)],
+            }
+          : a,
+      )
+      setAnnotations(next)
+      persistAnnotations(next)
+    },
+    [annotations, persistAnnotations],
   )
 
   // ── Lock / Unlock / Delete ─────────────────────────────────────────────
@@ -639,6 +711,49 @@ export function App(): JSX.Element {
         ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     })
   }, [])
+
+  const handleCreatePlanItemThread = useCallback(
+    (item: PlanItem): void => {
+      const existing = annotations.find(
+        (annotation) =>
+          annotation.status === 'open' &&
+          annotation.target?.type === 'plan-item' &&
+          annotation.target.planItemId === item.id,
+      )
+      if (existing) {
+        setActiveId(existing.id)
+        setRightRailTab('comments')
+        return
+      }
+
+      const fresh: Annotation = {
+        id: makeAnnotationId(),
+        anchor: {
+          srcStart: item.srcStart,
+          srcEnd: item.srcEnd,
+          text: content.slice(item.srcStart, item.srcEnd) || item.text,
+        },
+        target: {
+          type: 'plan-item',
+          planItemId: item.id,
+          kind: item.kind,
+          title: item.text,
+        },
+        thread: [],
+        state: 'draft',
+        status: 'open',
+        history: [],
+        created_at: new Date().toISOString(),
+        ai_suggestion: null,
+      }
+      const next = [...annotations, fresh]
+      setAnnotations(next)
+      setActiveId(fresh.id)
+      setRightRailTab('comments')
+      persistAnnotations(next)
+    },
+    [annotations, content, persistAnnotations],
+  )
 
   const planReadiness = useMemo(() => inspectPlan(content, planState, 'auto'), [content, planState])
 
@@ -952,6 +1067,7 @@ export function App(): JSX.Element {
                   onSelectItem={handleSelectPlanItem}
                   onHoverItem={setHoveredPlanItemId}
                   onToggleLocked={handleTogglePlanItemLocked}
+                  onCreateThread={handleCreatePlanItemThread}
                   onNormalize={() => void handleNormalizeReview()}
                 />
               ) : (
@@ -961,6 +1077,8 @@ export function App(): JSX.Element {
                   onSubmitInstruction={(id, instruction) => {
                     void handleSubmitInstruction(id, instruction)
                   }}
+                  onAddNote={handleAddNote}
+                  onDecide={handleDecide}
                   onLock={handleLock}
                   onUnlock={handleUnlock}
                   onDelete={handleDelete}
