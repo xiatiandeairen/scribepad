@@ -3,11 +3,12 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import type { Annotation } from '../../types/annotation.js'
 import type { SessionResponse } from '../../types/api.js'
-import type { DocSource, ReviewState, ReviewStore } from '../../types/ports.js'
+import type { DocSource, LlmRunner, ReviewState, ReviewStore } from '../../types/ports.js'
 import { createFsDocSource } from '../adapters/docsource-fs.js'
 import { createSidecarStore } from '../adapters/store-sidecar.js'
+import { createExecaRunner } from '../adapters/llm-execa.js'
 import { validateStateTransition } from '../../core/annotation-state.js'
-import { rewriteItems } from './rewrite.js'
+import { rewriteItems } from '../../core/rewrite.js'
 import type { AiConfig, RewriteItem, RewriteResultEntry } from '../../types/api.js'
 import type { PlanItemState } from '../../types/plan.js'
 import { documentStatePath, exportPathFor } from '../paths.js'
@@ -42,6 +43,8 @@ export interface SessionManagerOptions {
   docSource?: DocSource
   /** Injected at the composition root; defaults to the sidecar-backed store. */
   reviewStore?: ReviewStore
+  /** Injected for tests; defaults to a per-call execa runner from the AI config. */
+  llmRunner?: LlmRunner
 }
 
 type DoneResult = { outputPath: string }
@@ -58,6 +61,7 @@ export class SessionManager {
   private readonly getAiConfig: (() => AiConfig) | undefined
   private readonly docSource: DocSource
   private readonly reviewStore: ReviewStore
+  private readonly llmRunner: LlmRunner | undefined
   private readonly sessions = new Map<string, DocumentSession>()
   private readonly sessionsByPath = new Map<string, string>()
   private readonly doneWaiters = new Map<string, DoneWaiter[]>()
@@ -74,6 +78,7 @@ export class SessionManager {
     this.docSource = options.docSource ?? createFsDocSource()
     this.reviewStore =
       options.reviewStore ?? createSidecarStore({ repoRoot: this.repoRoot, env: this.env })
+    this.llmRunner = options.llmRunner
     this.lastActivityAt = this.now().toISOString()
   }
 
@@ -217,7 +222,8 @@ export class SessionManager {
     this.touch(session)
     const aiConfig = this.getAiConfig?.()
     if (!aiConfig) throw new Error('AI config unavailable')
-    return rewriteItems(fullDoc, items, existing, aiConfig)
+    const llm = this.llmRunner ?? createExecaRunner(aiConfig)
+    return rewriteItems(fullDoc, items, existing, llm)
   }
 
   async done(id: string, content?: string): Promise<DoneResult> {
