@@ -1,8 +1,19 @@
 # scribepad 重构计划 — 纯地基重构(0.1.0 foundation)
 
-> **状态**:planning(本轮只出 plan,不写代码)
+> **状态**:**已落地**(branch `refactor/core-ports-foundation`,8 commits,5 闸全绿)。
 > **生成日期**:2026-07-03
 > **前置**:承接 reframe(产品从"文档可视化"→"场景化交互层")。场景清单 = GitHub issues #2–#15(label `scenario`)。
+
+## 交付状态(诚实盘点)
+
+**已完成**:六边形地基(WI0 端口/内核 · WI2 execa agent runner · WI4 ReviewStore/sidecar · WI6 护栏)+ **存量功能全量 cutover**(document/annotations/plan-state/rewrite/AI-status/review-normalize 全走端口,旧 `services/{document,annotations,rewrite,ai}.ts` 与旧 cli 适配器已删,收敛到单一 spawn 路径)。
+
+**已就位但未实现(下一步功能工作)**:`types/domain.ts` 的 `ExtractedItem`/`Gap`/`ConfirmState`/`ContextPack` 契约 + `core/schema.ts` 已备好,但——
+- **WI1 抽取(规则→LLM)** 未建:`core/extract` 尚不存在。
+- **WI3 置信度确认状态机** 未建(仅类型)。
+- **WI5 eval + gold-set** 未建。
+
+即:地基 + 采用完成;新能力(抽取/缺口/置信度/eval)是接在新地基上的后续功能,契约与端口已就绪,补实现即可,不需再动 core 结构。
 
 ## 0. 决策记录(已拍板)
 
