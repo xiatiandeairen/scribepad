@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { AppContext } from '../app.js'
-import { getAiStatus, markAiUntested, testAi } from '../services/ai.js'
+import { getAiStatus, markAiUntested, testAi } from '../services/ai-status.js'
 import type {
   AiConfigRequest,
   AiConfigResponse,

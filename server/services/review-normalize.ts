@@ -1,4 +1,4 @@
-import { runAi } from './ai.js'
+import { createExecaRunner } from '../adapters/llm-execa.js'
 import type { AiConfig, ReviewNormalizeRequest, ReviewNormalizeResponse } from '../../types/api.js'
 
 export class ReviewNormalizeInputError extends Error {}
@@ -14,8 +14,9 @@ export async function normalizeReviewPlanRequest(
 }
 
 export async function normalizeReviewPlan(fullDoc: string, aiConfig: AiConfig): Promise<string> {
-  const raw = await runAi(aiConfig, { task: 'review-normalize', prompt: buildPrompt(fullDoc) })
-  const content = stripMarkdownFence(raw).trim()
+  const result = await createExecaRunner(aiConfig).run({ prompt: buildPrompt(fullDoc) })
+  if (!result.ok) throw new Error(result.error.message)
+  const content = stripMarkdownFence(result.value).trim()
   if (!content) throw new Error('AI returned empty normalized document')
   return content
 }
