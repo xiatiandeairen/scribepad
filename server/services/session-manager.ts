@@ -3,19 +3,14 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import type { Annotation } from '../../types/annotation.js'
 import type { SessionResponse } from '../../types/api.js'
-import type { DocSource } from '../../types/ports.js'
-import {
-  readAnnotations,
-  readPlanState,
-  sidecarPath,
-  writeAnnotations,
-  writePlanState,
-} from './annotations.js'
+import type { DocSource, ReviewState, ReviewStore } from '../../types/ports.js'
 import { createFsDocSource } from '../adapters/docsource-fs.js'
+import { createSidecarStore } from '../adapters/store-sidecar.js'
+import { validateStateTransition } from '../../core/annotation-state.js'
 import { rewriteItems } from './rewrite.js'
 import type { AiConfig, RewriteItem, RewriteResultEntry } from '../../types/api.js'
 import type { PlanItemState } from '../../types/plan.js'
-import { exportPathFor } from '../paths.js'
+import { documentStatePath, exportPathFor } from '../paths.js'
 
 export interface ClientState {
   id: string
@@ -45,6 +40,8 @@ export interface SessionManagerOptions {
   getAiConfig?: () => AiConfig
   /** Injected at the composition root; defaults to the fs-backed source. */
   docSource?: DocSource
+  /** Injected at the composition root; defaults to the sidecar-backed store. */
+  reviewStore?: ReviewStore
 }
 
 type DoneResult = { outputPath: string }
@@ -60,6 +57,7 @@ export class SessionManager {
   private readonly baseUrl: () => string
   private readonly getAiConfig: (() => AiConfig) | undefined
   private readonly docSource: DocSource
+  private readonly reviewStore: ReviewStore
   private readonly sessions = new Map<string, DocumentSession>()
   private readonly sessionsByPath = new Map<string, string>()
   private readonly doneWaiters = new Map<string, DoneWaiter[]>()
@@ -74,6 +72,8 @@ export class SessionManager {
     this.baseUrl = options.baseUrl ?? (() => 'http://127.0.0.1:0')
     this.getAiConfig = options.getAiConfig
     this.docSource = options.docSource ?? createFsDocSource()
+    this.reviewStore =
+      options.reviewStore ?? createSidecarStore({ repoRoot: this.repoRoot, env: this.env })
     this.lastActivityAt = this.now().toISOString()
   }
 
@@ -96,7 +96,7 @@ export class SessionManager {
       id,
       filePath: absolutePath,
       repoRoot: this.repoRoot,
-      sidecarPath: sidecarPath(absolutePath, this.repoRoot, this.env),
+      sidecarPath: documentStatePath(this.repoRoot, absolutePath, this.env),
       outputPath: outputPathFor(this.repoRoot, absolutePath, this.env),
       status: 'active',
       startedAt: now,
@@ -175,12 +175,24 @@ export class SessionManager {
   async readAnnotations(id: string): Promise<Annotation[]> {
     const session = this.getSession(id)
     this.touch(session)
-    return readAnnotations(session.filePath, session.repoRoot, this.env)
+    return (await this.loadState(session.filePath)).annotations
   }
 
   async writeAnnotations(id: string, annotations: Annotation[]): Promise<void> {
     const session = this.getSession(id)
-    await writeAnnotations(session.filePath, annotations, session.repoRoot, this.env)
+    const state = await this.loadState(session.filePath)
+    // Preserve the pre-refactor guard: reject illegal lifecycle transitions
+    // (matched by id) before persisting. New ids skip validation.
+    const prevById = new Map(state.annotations.map((a) => [a.id, a]))
+    for (const next of annotations) {
+      const prev = prevById.get(next.id)
+      if (prev && prev.state !== next.state && !validateStateTransition(prev.state, next.state)) {
+        throw new Error(
+          `Illegal state transition for annotation ${next.id}: ${prev.state} -> ${next.state}`,
+        )
+      }
+    }
+    await this.saveState(session.filePath, { ...state, annotations })
     session.dirty = true
     this.touch(session)
   }
@@ -188,19 +200,20 @@ export class SessionManager {
   async readPlanState(id: string): Promise<PlanItemState[]> {
     const session = this.getSession(id)
     this.touch(session)
-    return readPlanState(session.filePath, session.repoRoot, this.env)
+    return (await this.loadState(session.filePath)).planState
   }
 
   async writePlanState(id: string, planState: PlanItemState[]): Promise<void> {
     const session = this.getSession(id)
-    await writePlanState(session.filePath, planState, session.repoRoot, this.env)
+    const state = await this.loadState(session.filePath)
+    await this.saveState(session.filePath, { ...state, planState })
     session.dirty = true
     this.touch(session)
   }
 
   async rewrite(id: string, fullDoc: string, items: RewriteItem[]): Promise<RewriteResultEntry[]> {
     const session = this.getSession(id)
-    const existing = await readAnnotations(session.filePath, session.repoRoot, this.env)
+    const existing = (await this.loadState(session.filePath)).annotations
     this.touch(session)
     const aiConfig = this.getAiConfig?.()
     if (!aiConfig) throw new Error('AI config unavailable')
@@ -254,6 +267,17 @@ export class SessionManager {
   private async writeDoc(filePath: string, content: string): Promise<void> {
     if (!this.docSource.write) throw new Error('document source is read-only')
     const result = await this.docSource.write(filePath, content)
+    if (!result.ok) throw new Error(result.error.message)
+  }
+
+  private async loadState(filePath: string): Promise<ReviewState> {
+    const result = await this.reviewStore.load(filePath)
+    if (!result.ok) throw new Error(result.error.message)
+    return result.value
+  }
+
+  private async saveState(filePath: string, state: ReviewState): Promise<void> {
+    const result = await this.reviewStore.save(filePath, state)
     if (!result.ok) throw new Error(result.error.message)
   }
 

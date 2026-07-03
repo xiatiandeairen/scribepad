@@ -3,8 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { outputPathFor, SessionManager } from '../../server/services/session-manager'
-import { sidecarPath } from '../../server/services/annotations'
-import { docIdFor, repoIdFor } from '../../server/paths'
+import { docIdFor, documentStatePath, repoIdFor } from '../../server/paths'
 
 describe('outputPathFor', () => {
   it('writes exports under XDG state for the repo and document', async () => {
@@ -85,7 +84,7 @@ describe('SessionManager', () => {
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-session-'))
     const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
     const filePath = join(dir, 'plan.md')
-    const statePath = sidecarPath(filePath, dir, { XDG_STATE_HOME: xdg })
+    const statePath = documentStatePath(dir, filePath, { XDG_STATE_HOME: xdg })
     await writeFile(filePath, '# Plan\n\nFinal content.\n', 'utf8')
     await mkdir(dirname(statePath), { recursive: true })
     await writeFile(

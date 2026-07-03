@@ -5,8 +5,6 @@
  */
 import { Hono } from 'hono'
 import type { AppContext } from '../app.js'
-import { rewriteItems } from '../services/rewrite.js'
-import { readAnnotations } from '../services/annotations.js'
 import type { RewriteRequest, RewriteResponse, ErrorResponse } from '../../types/api.js'
 
 export function rewriteRoute(ctx: AppContext) {
@@ -20,8 +18,7 @@ export function rewriteRoute(ctx: AppContext) {
     }
     try {
       const session = ctx.sessionManager.getFallbackSession()
-      const existing = await readAnnotations(session.filePath, session.repoRoot)
-      const results = await rewriteItems(req.fullDoc, req.items, existing, ctx.getConfig().ai)
+      const results = await ctx.sessionManager.rewrite(session.id, req.fullDoc, req.items)
       const body: RewriteResponse = { results }
       return c.json(body)
     } catch (e) {
