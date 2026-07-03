@@ -44,7 +44,7 @@ AI coding plan review, Claude Code plan review, Codex workflow, vibe coding plan
 ## Workflow
 
 ```bash
-scribepad docs/plan.md --wait
+scribepad sample.md --wait
 ```
 
 This opens a browser review session and waits until you click `Done`.
@@ -52,7 +52,7 @@ This opens a browser review session and waits until you click `Done`.
 After `Done`, stdout prints exactly one line: the approved exported Markdown path.
 
 ```bash
-APPROVED_PLAN=$(scribepad docs/plan.md --wait)
+APPROVED_PLAN=$(scribepad sample.md --wait)
 cat "$APPROVED_PLAN"
 ```
 
@@ -63,13 +63,13 @@ That makes it easy for Codex, Claude Code, or any shell-driven agent to pause fo
 Run directly from GitHub:
 
 ```bash
-npx --yes github:xiatiandeairen/scribepad docs/plan.md
+npx --yes github:xiatiandeairen/scribepad sample.md
 ```
 
 For agent handoff:
 
 ```bash
-APPROVED_PLAN=$(npx --yes github:xiatiandeairen/scribepad docs/plan.md --wait)
+APPROVED_PLAN=$(npx --yes github:xiatiandeairen/scribepad sample.md --wait)
 cat "$APPROVED_PLAN"
 ```
 
@@ -84,7 +84,7 @@ npm link
 Then run the linked CLI:
 
 ```bash
-scribepad docs/plan.md
+scribepad sample.md
 ```
 
 ## Development
@@ -109,6 +109,4 @@ The source Markdown stays in your repo. Review state and exported agent handoff 
 
 ## Project Docs
 
-- Roadmap: [docs/roadmap.md](./docs/roadmap.md)
 - Architecture: [docs/architecture.md](./docs/architecture.md)
-- Tech selection: [docs/tech-selection.md](./docs/tech-selection.md)

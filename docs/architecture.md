@@ -2,7 +2,7 @@
 
 > 模块结构 + 依赖方向规则。本文档定义"代码长在哪里",不定义功能行为(那是 PRD / tech 文档的事)。
 >
-> 结构为 **Ports & Adapters(六边形)**:一份无框架的 `core/` 内核,既是独立产品的心脏,也能被 PM 项目 import 集成。溯源见 [`docs/refactor-plan.md`](./refactor-plan.md)。
+> 结构为 **Ports & Adapters(六边形)**:一份无框架的 `core/` 内核,既是独立产品的心脏,也能被 PM 项目 import 集成。
 
 ## 顶层结构
 
@@ -120,8 +120,3 @@ npm run test        # vitest (单测)
 npm run test:e2e    # playwright (e2e,自动起 dev server)
 ```
 
-## 决策溯源
-
-- 地基重构:[`docs/refactor-plan.md`](./refactor-plan.md) — 六边形内核 + 端口 + cutover
-- 选型:[`docs/tech-selection.md`](./tech-selection.md)
-- 路线:[`docs/roadmap.md`](./roadmap.md)

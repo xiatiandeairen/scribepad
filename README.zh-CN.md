@@ -44,7 +44,7 @@ AI coding plan review、Claude Code plan review、Codex workflow、vibe coding p
 ## 使用流程
 
 ```bash
-scribepad docs/plan.md --wait
+scribepad sample.md --wait
 ```
 
 命令会打开浏览器 Review 页面，并一直等待你点击 `Done`。
@@ -52,7 +52,7 @@ scribepad docs/plan.md --wait
 点击 `Done` 后，stdout 只输出一行：确认后的导出 Markdown 路径。
 
 ```bash
-APPROVED_PLAN=$(scribepad docs/plan.md --wait)
+APPROVED_PLAN=$(scribepad sample.md --wait)
 cat "$APPROVED_PLAN"
 ```
 
@@ -63,13 +63,13 @@ cat "$APPROVED_PLAN"
 直接从 GitHub 运行：
 
 ```bash
-npx --yes github:xiatiandeairen/scribepad docs/plan.md
+npx --yes github:xiatiandeairen/scribepad sample.md
 ```
 
 作为 agent handoff 闸口：
 
 ```bash
-APPROVED_PLAN=$(npx --yes github:xiatiandeairen/scribepad docs/plan.md --wait)
+APPROVED_PLAN=$(npx --yes github:xiatiandeairen/scribepad sample.md --wait)
 cat "$APPROVED_PLAN"
 ```
 
@@ -84,7 +84,7 @@ npm link
 再运行本地链接的 CLI：
 
 ```bash
-scribepad docs/plan.md
+scribepad sample.md
 ```
 
 ## 开发
@@ -109,6 +109,4 @@ scribepad 使用 XDG 目录，避免把运行态文件散落到项目里：
 
 ## 项目文档
 
-- Roadmap: [docs/roadmap.md](./docs/roadmap.md)
 - Architecture: [docs/architecture.md](./docs/architecture.md)
-- Tech selection: [docs/tech-selection.md](./docs/tech-selection.md)

@@ -4,8 +4,4 @@
 
 ## docs
 
-- roadmap: docs/roadmap.md
-- tech-selection: docs/tech-selection.md
 - architecture: docs/architecture.md
-- plan: docs/plan.md (v0.1 execution plan — active)
-- decision/v0.2-scope: docs/decision/v0.2-scope.md
