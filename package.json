@@ -30,7 +30,7 @@
     "test:e2e:session": "npm run build && playwright test --config=playwright.session.config.ts tests/e2e/session-server.spec.ts",
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.core.json --noEmit"
   },
   "files": [
     "dist",

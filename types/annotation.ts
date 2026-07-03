@@ -1,4 +1,5 @@
 import type { PlanItemKind, PlanItemState } from './plan.js'
+import type { ConfirmState } from './domain.js'
 
 /**
  * Annotation schema — source-range anchor.
@@ -81,4 +82,8 @@ export interface Sidecar {
   docRelativePath?: string
   annotations: Annotation[]
   planState?: PlanItemState[]
+  // Additive since v4 (confidence confirmation, docs/refactor-plan.md §3.6).
+  // Optional so older sidecar files without the field still parse; a missing
+  // value is read as an empty list by the store.
+  confirmStates?: ConfirmState[]
 }
