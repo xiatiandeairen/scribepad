@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import type { Annotation } from '../../types/annotation.js'
 import type { SessionResponse } from '../../types/api.js'
+import type { DocSource } from '../../types/ports.js'
 import {
   readAnnotations,
   readPlanState,
@@ -10,7 +11,7 @@ import {
   writeAnnotations,
   writePlanState,
 } from './annotations.js'
-import { readDocument, saveDocument } from './document.js'
+import { createFsDocSource } from '../adapters/docsource-fs.js'
 import { rewriteItems } from './rewrite.js'
 import type { AiConfig, RewriteItem, RewriteResultEntry } from '../../types/api.js'
 import type { PlanItemState } from '../../types/plan.js'
@@ -42,6 +43,8 @@ export interface SessionManagerOptions {
   now?: () => Date
   baseUrl?: () => string
   getAiConfig?: () => AiConfig
+  /** Injected at the composition root; defaults to the fs-backed source. */
+  docSource?: DocSource
 }
 
 type DoneResult = { outputPath: string }
@@ -56,6 +59,7 @@ export class SessionManager {
   private readonly now: () => Date
   private readonly baseUrl: () => string
   private readonly getAiConfig: (() => AiConfig) | undefined
+  private readonly docSource: DocSource
   private readonly sessions = new Map<string, DocumentSession>()
   private readonly sessionsByPath = new Map<string, string>()
   private readonly doneWaiters = new Map<string, DoneWaiter[]>()
@@ -69,6 +73,7 @@ export class SessionManager {
     this.now = options.now ?? (() => new Date())
     this.baseUrl = options.baseUrl ?? (() => 'http://127.0.0.1:0')
     this.getAiConfig = options.getAiConfig
+    this.docSource = options.docSource ?? createFsDocSource()
     this.lastActivityAt = this.now().toISOString()
   }
 
@@ -155,12 +160,14 @@ export class SessionManager {
   async readFile(id: string) {
     const session = this.getSession(id)
     this.touch(session)
-    return readDocument(session.filePath)
+    const result = await this.docSource.read(session.filePath)
+    if (!result.ok) throw new Error(result.error.message)
+    return { path: result.value.docId, content: result.value.content }
   }
 
   async saveFile(id: string, content: string): Promise<void> {
     const session = this.getSession(id)
-    await saveDocument(session.filePath, content)
+    await this.writeDoc(session.filePath, content)
     session.dirty = true
     this.touch(session)
   }
@@ -204,9 +211,11 @@ export class SessionManager {
     const session = this.getSession(id)
     session.status = 'closing'
     if (content !== undefined) {
-      await saveDocument(session.filePath, content)
+      await this.writeDoc(session.filePath, content)
     }
-    const finalContent = await readFile(session.filePath, 'utf8')
+    const readResult = await this.docSource.read(session.filePath)
+    if (!readResult.ok) throw new Error(readResult.error.message)
+    const finalContent = readResult.value.content
     await mkdir(dirname(session.outputPath), { recursive: true })
     await writeFile(session.outputPath, finalContent, 'utf8')
     session.exportedAt = this.now().toISOString()
@@ -240,6 +249,12 @@ export class SessionManager {
     if (active) return false
     const idleMs = this.hasEverHadActiveSession ? options.activeIdleMs : options.initialIdleMs
     return this.now().getTime() - Date.parse(this.lastActivityAt) > idleMs
+  }
+
+  private async writeDoc(filePath: string, content: string): Promise<void> {
+    if (!this.docSource.write) throw new Error('document source is read-only')
+    const result = await this.docSource.write(filePath, content)
+    if (!result.ok) throw new Error(result.error.message)
   }
 
   private touch(session: DocumentSession): void {

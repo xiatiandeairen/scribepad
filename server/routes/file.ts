@@ -6,7 +6,6 @@
  */
 import { Hono } from 'hono'
 import type { AppContext } from '../app.js'
-import { readDocument, saveDocument } from '../services/document.js'
 import type { FileResponse, SaveRequest, SaveResponse } from '../../types/api.js'
 
 export function fileRoute(ctx: AppContext) {
@@ -14,7 +13,7 @@ export function fileRoute(ctx: AppContext) {
 
   app.get('/file', async (c) => {
     const session = ctx.sessionManager.getFallbackSession()
-    const doc = await readDocument(session.filePath)
+    const doc = await ctx.sessionManager.readFile(session.id)
     const body: FileResponse = { path: doc.path, content: doc.content }
     return c.json(body)
   })
@@ -22,8 +21,7 @@ export function fileRoute(ctx: AppContext) {
   app.post('/save', async (c) => {
     const req = (await c.req.json()) as SaveRequest
     const session = ctx.sessionManager.getFallbackSession()
-    await saveDocument(session.filePath, req.content)
-    session.dirty = true
+    await ctx.sessionManager.saveFile(session.id, req.content)
     const body: SaveResponse = { ok: true }
     return c.json(body)
   })
