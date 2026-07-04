@@ -15,6 +15,8 @@ import type {
   PlanStateRequest,
   PlanStateResponse,
   ReviewNormalizeRequest,
+  RewriteApplyRequest,
+  RewriteApplyResponse,
   RewriteRequest,
   RewriteResponse,
   SaveRequest,
@@ -26,6 +28,7 @@ import {
   normalizeReviewPlanRequest,
   ReviewNormalizeInputError,
 } from '../services/review-normalize.js'
+import { RewriteApplyConflictError } from '../services/session-manager.js'
 
 export function sessionsRoute(ctx: AppContext) {
   const app = new Hono()
@@ -159,6 +162,31 @@ export function sessionsRoute(ctx: AppContext) {
     } catch (e) {
       const err: ErrorResponse = { error: String((e as Error).message ?? e) }
       return c.json(err, 500)
+    }
+  })
+
+  app.post('/sessions/:sessionId/rewrite-apply', async (c) => {
+    const req = (await c.req.json()) as RewriteApplyRequest
+    if (!Array.isArray(req.items) || req.items.length === 0) {
+      const err: ErrorResponse = { error: 'items[] required' }
+      return c.json(err, 400)
+    }
+    try {
+      const body: RewriteApplyResponse = await ctx.sessionManager.rewriteApply(
+        c.req.param('sessionId'),
+        req.items,
+      )
+      return c.json(body)
+    } catch (e) {
+      // Splice guard rejection (drift / overlap / oob) → 409; unknown session →
+      // 404; LLM / write failure → 500.
+      if (e instanceof RewriteApplyConflictError) {
+        const err: ErrorResponse = { error: e.message }
+        return c.json(err, 409)
+      }
+      const message = String((e as Error).message ?? e)
+      const err: ErrorResponse = { error: message }
+      return c.json(err, /Session not found/.test(message) ? 404 : 500)
     }
   })
 

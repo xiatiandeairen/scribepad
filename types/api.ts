@@ -78,6 +78,26 @@ export interface RewriteResponse {
   results: RewriteResultEntry[]
 }
 
+// POST /api/sessions/:sessionId/rewrite-apply — rewrite + splice + save + re-extract.
+// No fullDoc: the server reads the current document so the frontend can't push a
+// stale full source. `selection` is both the LLM input and the drift-guard expectation.
+export interface RewriteApplyItem {
+  id: string
+  srcStart: number
+  srcEnd: number
+  selection: string
+  instruction: string
+}
+
+export interface RewriteApplyRequest {
+  items: RewriteApplyItem[]
+}
+
+export interface RewriteApplyResponse {
+  result: ExtractResult
+  content: string
+}
+
 // POST /api/review-normalize
 export interface ReviewNormalizeRequest {
   fullDoc: string

@@ -10,12 +10,34 @@ import { createPlanStateShim, createSidecarStore } from '../adapters/store-sidec
 import type { PlanStateShim } from '../adapters/store-sidecar.js'
 import { createExecaRunner } from '../adapters/llm-execa.js'
 import { validateStateTransition } from '../../core/annotation-state.js'
-import { rewriteItems } from '../../core/rewrite.js'
+import { applyRewrites, rewriteItems } from '../../core/rewrite.js'
+import type { EditAt, RewriteApplyError } from '../../core/rewrite.js'
 import { extract } from '../../core/extract/index.js'
-import type { AiConfig, RewriteItem, RewriteResultEntry } from '../../types/api.js'
+import type {
+  AiConfig,
+  RewriteApplyItem,
+  RewriteApplyResponse,
+  RewriteItem,
+  RewriteResultEntry,
+} from '../../types/api.js'
 import type { ExtractResult } from '../../types/domain.js'
 import type { PlanItemState } from '../../types/plan.js'
 import { documentStatePath, exportPathFor } from '../paths.js'
+
+/**
+ * A rewrite-apply was rejected by the pure splice guard (drift / overlap /
+ * out-of-bounds). Carries the core error's `kind` so the route can map it to a
+ * 409 Conflict, distinct from an LLM failure (500). Mirrors
+ * ReviewNormalizeInputError's role for the review-normalize route.
+ */
+export class RewriteApplyConflictError extends Error {
+  readonly kind: RewriteApplyError['kind']
+  constructor(error: RewriteApplyError) {
+    super(error.message)
+    this.name = 'RewriteApplyConflictError'
+    this.kind = error.kind
+  }
+}
 
 export interface ClientState {
   id: string
@@ -256,6 +278,47 @@ export class SessionManager {
     return rewriteItems(fullDoc, items, llm)
   }
 
+  /**
+   * Rewrite-and-persist closed loop: read the current doc → rewrite each item's
+   * selection via the LLM → splice the results back into the source → save →
+   * re-extract. Returns the fresh ExtractResult + new full content for the
+   * frontend to re-render.
+   *
+   * Reads the current document itself (no fullDoc from the client) so a stale
+   * source can't clobber concurrent edits; the per-edit anchors still carry
+   * `selection` for the drift guard. Throws RewriteApplyConflictError when the
+   * splice guard rejects (drift / overlap / out-of-bounds) — nothing is written
+   * in that case. Write failures and read-only sources surface as errors too.
+   */
+  async rewriteApply(id: string, items: RewriteApplyItem[]): Promise<RewriteApplyResponse> {
+    const session = this.getSession(id)
+    this.touch(session)
+    const readResult = await this.docSource.read(session.filePath)
+    if (!readResult.ok) throw new Error(readResult.error.message)
+    const doc = readResult.value.content
+
+    const llm = this.resolveLlm()
+    const rewritten = await rewriteItems(
+      doc,
+      items.map((it) => ({ id: it.id, selection: it.selection, instruction: it.instruction })),
+      llm,
+    )
+    const rewrittenById = new Map(rewritten.map((r) => [r.id, r.rewritten]))
+    const edits: EditAt[] = items.map((it) => ({
+      srcStart: it.srcStart,
+      srcEnd: it.srcEnd,
+      selection: it.selection,
+      rewritten: rewrittenById.get(it.id) ?? '',
+    }))
+
+    const applied = applyRewrites(doc, edits)
+    if (!applied.ok) throw new RewriteApplyConflictError(applied.error)
+
+    await this.writeDoc(session.filePath, applied.value)
+    session.dirty = true
+    return { result: extract(applied.value), content: applied.value }
+  }
+
   async done(id: string, content?: string): Promise<DoneResult> {
     const session = this.getSession(id)
     session.status = 'closing'
@@ -298,6 +361,13 @@ export class SessionManager {
     if (active) return false
     const idleMs = this.hasEverHadActiveSession ? options.activeIdleMs : options.initialIdleMs
     return this.now().getTime() - Date.parse(this.lastActivityAt) > idleMs
+  }
+
+  private resolveLlm(): LlmRunner {
+    if (this.llmRunner) return this.llmRunner
+    const aiConfig = this.getAiConfig?.()
+    if (!aiConfig) throw new Error('AI config unavailable')
+    return createExecaRunner(aiConfig)
   }
 
   private async writeDoc(filePath: string, content: string): Promise<void> {

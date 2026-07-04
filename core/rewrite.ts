@@ -11,6 +11,8 @@
 import { z } from 'zod'
 import { runTask } from './agent/runner.js'
 import type { TaskSpec } from './agent/task.js'
+import { err, ok } from './result.js'
+import type { Result } from '../types/result.js'
 import type { LlmRunner } from '../types/ports.js'
 import type { RewriteItem, RewriteResultEntry } from '../types/api.js'
 
@@ -68,4 +70,86 @@ export async function rewriteItems(
     id: it.id,
     rewritten: rewrittenById.get(it.id) ?? '',
   }))
+}
+
+/**
+ * One replacement to splice into the markdown source. `selection` is the text
+ * the caller expects to still occupy [srcStart, srcEnd) — the drift guard's
+ * expected value; `rewritten` is what replaces it.
+ */
+export interface EditAt {
+  srcStart: number
+  srcEnd: number
+  selection: string
+  rewritten: string
+}
+
+export type RewriteApplyErrorKind = 'drift' | 'out-of-bounds' | 'overlap'
+
+/** Which edit failed (`index` into the input array) and why. */
+export interface RewriteApplyError {
+  kind: RewriteApplyErrorKind
+  message: string
+  index: number
+}
+
+/**
+ * Splice `edits` into `doc`, returning the new source.
+ *
+ * Business failures return `Err` (never throw), so the caller can map them to a
+ * 4xx/409 without a try:
+ *  - `drift` — an anchor no longer matches (`doc.slice(srcStart, srcEnd) !==
+ *    selection`); the document changed since the anchor was taken. This is the
+ *    concurrency guard equivalent to a textHash mismatch.
+ *  - `out-of-bounds` — an anchor violates `0 ≤ srcStart ≤ srcEnd ≤ doc.length`.
+ *  - `overlap` — two anchors cover overlapping `[srcStart, srcEnd)` ranges.
+ *
+ * Edits are applied back-to-front (descending `srcStart`) so an earlier splice
+ * never shifts the offsets of a later one. Empty `edits` returns `doc` verbatim.
+ */
+export function applyRewrites(doc: string, edits: EditAt[]): Result<string, RewriteApplyError> {
+  for (let i = 0; i < edits.length; i++) {
+    const edit = edits[i]
+    if (
+      !Number.isInteger(edit.srcStart) ||
+      !Number.isInteger(edit.srcEnd) ||
+      edit.srcStart < 0 ||
+      edit.srcStart > edit.srcEnd ||
+      edit.srcEnd > doc.length
+    ) {
+      return err({
+        kind: 'out-of-bounds',
+        index: i,
+        message: `edit ${i}: [${edit.srcStart}, ${edit.srcEnd}) out of bounds for doc length ${doc.length}`,
+      })
+    }
+    if (doc.slice(edit.srcStart, edit.srcEnd) !== edit.selection) {
+      return err({
+        kind: 'drift',
+        index: i,
+        message: `edit ${i}: selection no longer matches doc at [${edit.srcStart}, ${edit.srcEnd}) — document changed since the anchor was taken`,
+      })
+    }
+  }
+
+  // Overlap check on ranges sorted by start; carry the original index for reporting.
+  const ordered = edits
+    .map((edit, index) => ({ srcStart: edit.srcStart, srcEnd: edit.srcEnd, index }))
+    .sort((a, b) => a.srcStart - b.srcStart)
+  for (let i = 1; i < ordered.length; i++) {
+    if (ordered[i].srcStart < ordered[i - 1].srcEnd) {
+      return err({
+        kind: 'overlap',
+        index: ordered[i].index,
+        message: `edit ${ordered[i].index}: range [${ordered[i].srcStart}, ${ordered[i].srcEnd}) overlaps edit ${ordered[i - 1].index}`,
+      })
+    }
+  }
+
+  // Splice back-to-front so each replacement leaves earlier offsets intact.
+  let out = doc
+  for (const edit of [...edits].sort((a, b) => b.srcStart - a.srcStart)) {
+    out = out.slice(0, edit.srcStart) + edit.rewritten + out.slice(edit.srcEnd)
+  }
+  return ok(out)
 }

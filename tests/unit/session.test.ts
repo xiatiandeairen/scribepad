@@ -4,9 +4,15 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { outputPathFor, SessionManager } from '../../server/services/session-manager'
+import {
+  outputPathFor,
+  RewriteApplyConflictError,
+  SessionManager,
+} from '../../server/services/session-manager'
 import { docIdFor, documentStatePath, repoIdFor } from '../../server/paths'
+import { extract } from '../../core/extract/index.js'
 import type { Signoff } from '../../types/domain.js'
+import type { LlmRunner } from '../../types/ports.js'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 function readFixture(name: string): string {
@@ -248,5 +254,69 @@ describe('SessionManager — extract', () => {
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-extract-'))
     const manager = new SessionManager({ repoRoot: dir })
     await expect(manager.extract('sess-nonexistent')).rejects.toThrow(/Session not found/)
+  })
+})
+
+describe('SessionManager — rewriteApply', () => {
+  function fakeLlm(entries: Array<{ id: string; rewritten: string }>): LlmRunner {
+    return { run: async () => ({ ok: true, value: JSON.stringify(entries) }) }
+  }
+
+  async function setupSession(content: string, llm: LlmRunner) {
+    const dir = await mkdtemp(join(tmpdir(), 'scribepad-apply-'))
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
+    const filePath = join(dir, 'plan.md')
+    await writeFile(filePath, content, 'utf8')
+    const manager = new SessionManager({
+      repoRoot: dir,
+      env: { XDG_STATE_HOME: xdg },
+      llmRunner: llm,
+    })
+    const { sessionId } = manager.openSession(filePath)
+    return { manager, sessionId, filePath }
+  }
+
+  it('runs the closed loop: read → rewrite → splice → save → re-extract', async () => {
+    const original = '# Plan\n\nOld sentence here.\n'
+    const selection = 'Old sentence here.'
+    const srcStart = original.indexOf(selection)
+    const { manager, sessionId, filePath } = await setupSession(
+      original,
+      fakeLlm([{ id: '1', rewritten: 'New sentence here.' }]),
+    )
+
+    const { result, content } = await manager.rewriteApply(sessionId, [
+      { id: '1', srcStart, srcEnd: srcStart + selection.length, selection, instruction: 'improve' },
+    ])
+
+    expect(content).toBe('# Plan\n\nNew sentence here.\n')
+    // Landed on disk, not just returned.
+    await expect(readFile(filePath, 'utf8')).resolves.toBe('# Plan\n\nNew sentence here.\n')
+    // Returned result is a fresh extraction of the new content, not the old.
+    expect(result).toEqual(extract(content))
+  })
+
+  it('does not persist when an edit drifts (selection no longer matches)', async () => {
+    const original = '# Plan\n\nOld sentence here.\n'
+    const { manager, sessionId, filePath } = await setupSession(
+      original,
+      fakeLlm([{ id: '1', rewritten: 'New sentence here.' }]),
+    )
+
+    // selection claims text that is not at [8, 26) → drift guard rejects.
+    await expect(
+      manager.rewriteApply(sessionId, [
+        { id: '1', srcStart: 8, srcEnd: 26, selection: 'Stale text here!!!', instruction: 'x' },
+      ]),
+    ).rejects.toBeInstanceOf(RewriteApplyConflictError)
+
+    // Document is untouched.
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(original)
+  })
+
+  it('throws for an unknown sessionId (→ 404 at the route level)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'scribepad-apply-'))
+    const manager = new SessionManager({ repoRoot: dir })
+    await expect(manager.rewriteApply('sess-nonexistent', [])).rejects.toThrow(/Session not found/)
   })
 })
