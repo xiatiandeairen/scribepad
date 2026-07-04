@@ -1,9 +1,7 @@
-/* ═══ Spec Plan — 演示数据（会话 / 批注 / 历史 / 命令）═══
-   全部为 mock 演示内容，接真实后端时由 API 数据替换：
+/* ═══ Spec Plan — 演示数据（会话 / 历史 / 命令）═══
+   会话 / 历史仍为 mock 演示内容；批注已切到后端（annotations，见 plan-net.jsx）。
    · 会话 / 消息   → 你的会话存储
-   · 批注 NOTES0   → GET /api/annotations
-   · 历史 HIST0    → 你的版本记录
-   · NOTE_ANCHORS  → 批注 anchor（label → 原文锚点子串） */
+   · 历史 HIST0    → 你的版本记录 */
 
 /* ── 初始会话 ── */
 const CHAT = [
@@ -61,18 +59,9 @@ const CMDS = [
   ]},
 ];
 
-/* ── 批注（评审意见）+ 原文锚点 ── */
-const NOTES0 = [
-  { id:'n1', who:'周衍', color:'#7a6ad0', time:'40 分钟前', pt:'D3', quote:'砍掉「锁 / 防漂移」整条线', body:'D3 的代价（R3）我认可，但退休前这段迁移期建议在 /api/rewrite 留一条日志埋点，方便观察是否真有人直连提交 decided。不阻塞开工。', status:'open' },
-  { id:'n2', who:'陈默', color:'#c98a2b', time:'1 小时前', pt:'R2', quote:'标杆样本只有 1 份，规则可能 over-fit', body:'R2 是本期最大的不确定性。§4.6 的 4 个 fixture 全是中文 8 节，建议补一个英文 plan 和一个「决策三段词表变体」的样本，把降级路径也压到。', status:'open' },
-  { id:'n3', who:'林越', color:'#3d9a6d', time:'昨天', pt:'P1', quote:'8 类信息点体系为新模型 v1 形态', body:'P1 我这边拍板了：precondition 作为第 8 类没问题，和 8 节一一对应清晰。', status:'done' },
-];
-/* label → 原文中被高亮的锚点子串（渲染层 AnnoText 消费） */
-const NOTE_ANCHORS = {
-  D3:{ id:'n1', anchorText:'砍掉整条线' },
-  R2:{ id:'n2', anchorText:'标杆样本只有 1 份，规则可能 over-fit' },
-  P1:{ id:'n3', anchorText:'8 类信息点体系（goal / scope / decision / behavior / verification / risk / precondition / open-question）为新模型 v1 形态' },
-};
+/* 批注（annotations）与高亮锚点已切到后端：GET/POST /api/sessions/:id/annotations，
+   渲染高亮由 App 从 annotation.anchor 派生 window.NOTE_HIGHLIGHTS（见 plan-net.jsx /
+   plan-app.jsx）；此处不再保留 NOTES0 / NOTE_ANCHORS，避免与后端双源冲突。 */
 
 /* ── 修改历史 ── */
 const HIST0 = [
@@ -86,4 +75,4 @@ const HIST0 = [
     diff:{ kind:'add', summary:'从讨论记录与仓库核实生成标准 8 节 plan：目标 / 边界 / 决策 / 做法 / 验收 / 风险 / 前置 / 待确认。' } },
 ];
 
-Object.assign(window,{ CHAT, SESSIONS, SUGG, SEL_MORE, CMDS, NOTES0, NOTE_ANCHORS, HIST0 });
+Object.assign(window,{ CHAT, SESSIONS, SUGG, SEL_MORE, CMDS, HIST0 });

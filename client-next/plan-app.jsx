@@ -4,10 +4,36 @@
    本文件只做状态编排与事件接线。 */
 const { useState, useRef, useEffect } = React;
 
-const LS_SIGNED='spec-plan-signed';
 const SEL_OP_TEXT={ dcard:'把这段转成决策卡', risk:'把这段提为风险项', open:'把这段提为待确认', explain:'解释这段' };
 
-function App(){
+/* 选区 range → 所属信息点 label（最近的 [data-pt]）；供 rewrite / 批注锚点换算用。 */
+function ptLabelOfRange(range){
+  if(!range) return null;
+  let node=range.commonAncestorContainer;
+  if(node&&node.nodeType===3) node=node.parentElement;
+  const el=node&&node.closest?node.closest('[data-pt]'):null;
+  return el?el.getAttribute('data-pt'):null;
+}
+/* label → 该点的注册表条目 / 源锚点 / kind。决策卡点无 point.anchor（DecisionCard 无锚点）→ 返回 null。 */
+function pointEntryOf(label){ return label?(PLAN_MODEL.points[normLabel(label)]||null):null; }
+function pointAnchorOf(label){ const e=pointEntryOf(label); return e&&e.point&&e.point.anchor?e.point.anchor:null; }
+function pointKindOf(label){ const e=pointEntryOf(label); return e&&e.point?e.point.kind:undefined; }
+
+/* 选区 + 源锚点 → 结构化锚点 { srcStart, srcEnd, text }（批注用；text=选区原文供高亮/溯源）。
+   优先按信息点锚点换算；无点锚点时在整源找子串兜底；都失败返回 null（无法定位）。 */
+function buildSelectionAnchor(sel, label){
+  const src=window.PLAN_DOC_SOURCE||'';
+  const anchor=pointAnchorOf(label);
+  if(anchor){
+    const r=computeSrcRange(sel,{ srcStart:anchor.srcStart, srcEnd:anchor.srcEnd, text:src.slice(anchor.srcStart,anchor.srcEnd) });
+    return { srcStart:r.srcStart, srcEnd:r.srcEnd, text:sel };
+  }
+  const i=src.indexOf(sel);
+  if(i>=0) return { srcStart:i, srcEnd:i+sel.length, text:sel };
+  return null;
+}
+
+function App({ sessionId, doc }){
   /* ── 布局 / 面板 ── */
   const [chatOpen,setChatOpen]=useState(true);
   const [rightOpen,setRightOpen]=useState(true);
@@ -29,18 +55,37 @@ function App(){
   /* ── 文档 / 审阅 ── */
   const [saveState,setSaveState]=useState('saved');
   const [spin,setSpin]=useState(false);
-  const [signed,setSigned]=usePersistedState(LS_SIGNED,[]);
-  const [notes,setNotes]=useState(NOTES0);
+  const [signoffs,setSignoffs]=useState([]);      /* 后端 Signoff[] 为单一真源 */
+  const signed=signoffs.map(s=>s.label);          /* 派生：UI 只认 label 列表 */
+  const [notes,setNotes]=useState([]);            /* 后端 annotations（GET 加载） */
   const [history]=useState(HIST0);
   const [pulseNoteId,setPulseNoteId]=useState(null);
   const [diffEntry,setDiffEntry]=useState(null);
   const [selectedNotes,setSelectedNotes]=useState([]);
   const [rwOpen,setRwOpen]=useState(false);
   const [rwQuote,setRwQuote]=useState('');
+  const [,setDocVer]=useState(0);                 /* bump → 重渲染读取刷新后的全局 PLAN_MODEL */
+  const bumpDoc=()=>setDocVer(v=>v+1);
+
+  /* AnnoText 高亮源：从当前 notes 的结构化锚点派生（替代 mock NOTE_ANCHORS） */
+  window.NOTE_HIGHLIGHTS=buildNoteHighlights(notes);
 
   const mainRef=useRef(null), scrollRef=useRef(null), saveTimer=useRef(null);
-  const agent=useRef(null); if(!agent.current) agent.current=createMockAgent();
+  /* mutated（agent 落盘）→ 重拉 extract 重渲染，与 rewrite-apply / 顶栏刷新共用同一入口 */
+  const refreshAfterMutation=async()=>{
+    if(!sessionId) return;
+    try{ await fetchPlanUpdate(sessionId, doc); bumpDoc(); }catch(_){}
+  };
+  const agent=useRef(null);
+  if(!agent.current) agent.current=sessionId?createRealAgent(sessionId, refreshAfterMutation):createMockAgent();
   const cancelAgent=useRef(null);
+
+  /* ── 首屏加载：批注 / 拍板（刷新后仍在）── */
+  useEffect(()=>{
+    if(!sessionId) return;
+    getAnnotations(sessionId).then(r=>setNotes((r.annotations||[]).map(annotationToNote))).catch(()=>{});
+    getSignoffs(sessionId).then(r=>setSignoffs(r.signoffs||[])).catch(()=>{});
+  },[]);
 
   /* ── hooks：跳转总线 / scroll-spy / 选区 ── */
   const { backStack, goBack }=useJumpBus(scrollRef);
@@ -53,7 +98,13 @@ function App(){
     clearTimeout(saveTimer.current);
     saveTimer.current=setTimeout(()=>setSaveState('saved'),1400);
   }
-  function refresh(){ setSpin(true); setSaveState('synced'); setTimeout(()=>{ setSpin(false); setSaveState('saved'); flash('已同步到最新版本'); },900); }
+  async function refresh(){
+    if(!sessionId){ flash('离线示例数据，无法同步'); return; }
+    setSpin(true); setSaveState('synced');
+    try{ await fetchPlanUpdate(sessionId, doc); bumpDoc(); flash('已同步到最新版本'); }
+    catch(e){ flash('同步失败：'+((e&&e.message)||e)); }
+    finally{ setSpin(false); setSaveState('saved'); }
+  }
   const saveLabel={ saved:'已保存', saving:'更新中…', synced:'已同步' }[saveState];
 
   /* ── 会话管理 ── */
@@ -74,9 +125,9 @@ function App(){
   function onSend(text){
     const quote=selCtx; setSelCtx(null);
     const utext=text||(quote?'针对选中内容优化一下':'');
+    /* chat 不改文档；selection-op 若改了文档由 createRealAgent 的 onMutated 重拉 extract。 */
     askAgent({role:'user',text:utext,...(quote?{quote}:{})},
-      {type:'chat',text:utext,quote},
-      ()=>{ touchDoc(); flash('plan 已更新'); });
+      {type:'chat',text:utext,quote});
   }
   function moreEdit(m){
     setTool(null);
@@ -92,19 +143,39 @@ function App(){
     askAgent({role:'user',text:it.title},{type:'command',id:it.id});
   }
 
-  /* ── 批注 ── */
-  const updateNote=(id,patch)=>setNotes(ns=>ns.map(n=>n.id===id?{...n,...patch}:n));
-  const resolveNote=(id)=>setNotes(ns=>ns.map(n=>n.id===id?{...n,status:n.status==='done'?'open':'done'}:n));
-  const toggleSign=(l)=>setSigned(s=>s.includes(l)?s.filter(x=>x!==l):[...s,l]);
+  /* ── 批注（后端 annotations 为真源；草稿未存 body 前不落盘）── */
+  function persistNotes(list){
+    if(!sessionId) return;
+    postAnnotations(sessionId, list.filter(n=>!n.draft).map(noteToAnnotation)).catch(()=>flash('批注保存失败'));
+  }
+  const updateNote=(id,patch)=>setNotes(ns=>{
+    const next=ns.map(n=>n.id===id?{...n,...patch}:n);
+    if(patch.draft===false) persistNotes(next);   /* 草稿转正式 → 落盘 */
+    return next;
+  });
+  const resolveNote=(id)=>setNotes(ns=>{
+    const next=ns.map(n=>n.id===id?{...n,status:n.status==='done'?'open':'done'}:n);
+    persistNotes(next);
+    return next;
+  });
+  const toggleSign=(l)=>{
+    const next=toggleSignoff(signoffs, l);
+    setSignoffs(next);                             /* 乐观更新 */
+    if(sessionId) postSignoffs(sessionId, next).catch(()=>{ flash('拍板保存失败'); getSignoffs(sessionId).then(r=>setSignoffs(r.signoffs||[])).catch(()=>{}); });
+  };
   const toggleNoteSel=(id)=>setSelectedNotes(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
 
   function addAnnotation(){
-    const range=savedRange.current; const quote=(range?range.toString():'').trim(); setTool(null);
-    if(!quote){ flash('请重新选中一段文字'); return; }
+    const range=savedRange.current; const sel=(range?range.toString():'').trim(); setTool(null);
+    if(!sel){ flash('请重新选中一段文字'); return; }
+    const label=ptLabelOfRange(range);
+    const anchor=buildSelectionAnchor(sel, label);
+    if(!anchor){ flash('无法定位到原文，请重新选中'); return; }
     const id='n'+Date.now();
     const span=wrapSelection();
     if(span){ span.className='anno-mark'; span.dataset.note=id; }
-    setNotes(ns=>[{ id, who:'周衍', color:'#7a6ad0', time:'刚刚', pt:null, quote:quote.slice(0,40), body:'', status:'open', draft:true },...ns]);
+    setNotes(ns=>[{ id, who:'我', color:'#5b57d6', time:'刚刚', pt:label||null, kind:label?pointKindOf(label):undefined,
+      quote:sel.slice(0,40), body:'', status:'open', draft:true, anchor, createdAt:new Date().toISOString() },...ns]);
     setRightOpen(true); setRightTab('notes'); pulse(id);
     flash('已添加批注，在右栏输入内容');
   }
@@ -129,9 +200,9 @@ function App(){
     if(!chosen.length){ flash('没有可分析的批注'); return; }
     setChatOpen(true); setSelectedNotes([]);
     const list=chosen.map(n=>`· ${n.pt?`[${n.pt}] `:''}${n.who}：「${n.quote}」${n.body?' —— '+n.body:''}`).join('\n');
+    /* AgentNote 契约 = { pt?, text? }（loose）：只送后端消费的字段。 */
     askAgent({role:'user',text:`把这 ${chosen.length} 条批注一起分析讨论：\n${list}`},
-      {type:'analyze-notes',notes:chosen},
-      ()=>flash(`已分析 ${chosen.length} 条批注`));
+      {type:'analyze-notes',notes:chosen.map(n=>({ pt:n.pt||undefined, text:n.body||n.quote }))});
   }
 
   /* ── 历史 diff：原文内嵌 ── */
@@ -145,19 +216,26 @@ function App(){
     },80);
   }
 
-  /* ── 内联 AI 改写（演示：高亮动画，语义不变）── */
-  function doRewrite(constraint){
+  /* ── 内联 AI 改写：选区 → 源锚点换算 → rewrite-apply 落盘 → 重拉 extract 重渲染 ── */
+  async function doRewrite(constraint){
     setRwOpen(false);
-    const span=wrapSelection(); setTool(null);
-    if(!span){ flash('请重新选中一段文字'); return; }
-    const orig=span.textContent;
-    setTimeout(()=>{
-      span.className='ai-added';
-      span.textContent=orig;
-      requestAnimationFrame(()=>{ span.classList.add('settle'); });
-      setTimeout(()=>{ if(span.parentNode){ const p=span.parentNode; while(span.firstChild) p.insertBefore(span.firstChild,span); p.removeChild(span);} },1400);
-      touchDoc(); flash(constraint?`已按约束改写：${constraint.slice(0,16)}${constraint.length>16?'…':''}`:'已改写选中段落');
-    },950);
+    const range=savedRange.current; const sel=(range?range.toString():'').trim(); setTool(null);
+    if(!sel){ flash('请重新选中一段文字'); return; }
+    if(!sessionId){ flash('离线示例数据，无法改写'); return; }
+    const label=ptLabelOfRange(range);
+    const anchor=pointAnchorOf(label);
+    if(!anchor){ flash('这段无法定位到原文锚点，请选其他段落'); return; }
+    const src=window.PLAN_DOC_SOURCE||'';
+    const r=computeSrcRange(sel,{ srcStart:anchor.srcStart, srcEnd:anchor.srcEnd, text:src.slice(anchor.srcStart,anchor.srcEnd) });
+    touchDoc();
+    try{
+      const res=await postRewriteApply(sessionId,[{ id:label, srcStart:r.srcStart, srcEnd:r.srcEnd, selection:r.selection, instruction:constraint||'' }]);
+      applyPlanUpdate(res.result, res.content, doc); bumpDoc();
+      flash(constraint?`已按约束改写：${constraint.slice(0,16)}${constraint.length>16?'…':''}`:'已改写并落盘');
+    }catch(e){
+      if(e&&e.status===409){ flash('文档已变，请刷新重试'); await refreshAfterMutation(); }
+      else flash('改写失败：'+((e&&e.message)||e));
+    }
   }
 
   /* ── 定位 / 行动卡 / 快捷键 / 空白收起右栏 ── */
@@ -249,26 +327,9 @@ function App(){
 
 /* ═══ 数据加载：live fetch → adaptExtract → buildPlanModel → 渲染 ═══
    启动 POST /api/sessions/open 打开目标 plan（?doc= 可覆盖，默认 plan-data-backend.md）→
-   GET /api/sessions/:id/extract → 派生 PLAN_MODEL（写入全局，App 只读它）。
-   loading / error 用 React state（无构建环境）；error 提供重试 + 离线 fixture 兜底。 */
-async function fetchJson(method,url,body){
-  const res=await fetch(url,{ method,
-    headers: body?{ 'content-type':'application/json' }:undefined,
-    body: body?JSON.stringify(body):undefined });
-  if(!res.ok){
-    let msg=res.status+' '+res.statusText;
-    try{ const e=await res.json(); if(e&&e.error) msg=e.error; }catch(_){}
-    throw new Error(msg);
-  }
-  return res.json();
-}
-async function loadPlanModel(){
-  const doc=new URLSearchParams(location.search).get('doc')||'plan-data-backend.md';
-  const opened=await fetchJson('POST','/api/sessions/open',{ filePath:doc });
-  const { result }=await fetchJson('GET',`/api/sessions/${encodeURIComponent(opened.sessionId)}/extract`);
-  return buildPlanModel(adaptExtract(result,{ project:'scribepad', file:doc.split('/').pop() }));
-}
-
+   GET extract + file → 写入全局 PLAN_MODEL / PLAN_DOC_SOURCE（App 只读它们）。fetch / 派生 /
+   互转都在 plan-net.jsx（后端接线层）。loading / error 用 React state（无构建环境）；
+   error 提供重试 + 离线 fixture 兜底（sessionId=null，仅只读浏览，写路径提示离线）。 */
 function PlanBoot({ status, message, onRetry, onOffline }){
   return (
     <div style={{ display:'grid', placeItems:'center', height:'100vh', fontFamily:'var(--sans)', color:'var(--fg)' }}>
@@ -287,14 +348,16 @@ function PlanBoot({ status, message, onRetry, onOffline }){
 }
 
 const planRoot=ReactDOM.createRoot(document.getElementById('root'));
-function mountApp(model){ window.PLAN_MODEL=model; planRoot.render(<App/>); }
 async function bootstrapPlan(){
   planRoot.render(<PlanBoot status="loading"/>);
+  const doc=new URLSearchParams(location.search).get('doc')||'plan-data-backend.md';
   try {
-    mountApp(await loadPlanModel());
+    const { sessionId }=await openPlan(doc);
+    await fetchPlanUpdate(sessionId, doc);        /* 写入 window.PLAN_MODEL + PLAN_DOC_SOURCE */
+    planRoot.render(<App sessionId={sessionId} doc={doc}/>);
   } catch(e){
     const onOffline=window.PLAN_FALLBACK_SOURCE
-      ? ()=>mountApp(buildPlanModel(window.PLAN_FALLBACK_SOURCE))
+      ? ()=>{ window.PLAN_MODEL=buildPlanModel(window.PLAN_FALLBACK_SOURCE); planRoot.render(<App sessionId={null} doc={doc}/>); }
       : null;
     planRoot.render(<PlanBoot status="error" message={String((e&&e.message)||e)} onRetry={bootstrapPlan} onOffline={onOffline}/>);
   }

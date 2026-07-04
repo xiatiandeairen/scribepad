@@ -6,10 +6,11 @@
    新增 / 替换某节形态：写一个组件，注册进 SECTION_RENDERERS 即可。
    未注册的节走 GenericSection 兜底。 */
 
-/* ── 批注锚点：把 mock 批注的 anchorText 包成可点高亮 ──
-   NOTE_ANCHORS（label → {id, anchorText}）由 plan-mock-data.jsx 提供。 */
+/* ── 批注锚点：把批注的 anchorText 包成可点高亮 ──
+   NOTE_HIGHLIGHTS（pt → {id, anchorText}）由 App 从当前 notes（后端 annotation.anchor
+   结构化锚点）派生（buildNoteHighlights），替代原 mock 的 NOTE_ANCHORS 子串表。 */
 function AnnoText({ s, pt }){
-  const note=(window.NOTE_ANCHORS||{})[pt];
+  const note=(window.NOTE_HIGHLIGHTS||{})[pt];
   if(!note||!String(s).includes(note.anchorText)) return <T s={s}/>;
   const i=String(s).indexOf(note.anchorText);
   return <>
