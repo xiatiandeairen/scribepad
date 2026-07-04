@@ -10,20 +10,20 @@
 import { z } from 'zod'
 import type {
   ConfirmState,
+  DecisionCard,
   ExtractResult,
   ExtractedItem,
-  Gap,
-  GapKind,
   InfoKind,
 } from '../types/domain.js'
 
 const infoKindSchema = z.enum([
   'goal',
   'scope',
+  'decision',
   'behavior',
   'verification',
   'risk',
-  'decision',
+  'precondition',
   'open-question',
 ]) satisfies z.ZodType<InfoKind>
 
@@ -32,35 +32,43 @@ const srcAnchorSchema = z.object({
   srcEnd: z.number().int().nonnegative(),
 })
 
+const itemPathSchema = z.object({
+  sectionTitle: z.string(),
+  groupTitle: z.string().optional(),
+})
+
 export const extractedItemSchema = z.object({
   id: z.string(),
   kind: infoKindSchema,
+  label: z.string().optional(),
   title: z.string(),
   text: z.string(),
   anchor: srcAnchorSchema.optional(),
-  confidence: z.number().min(0).max(1),
+  refs: z.array(z.string()),
+  path: itemPathSchema,
+  role: z.enum(['checkpoint', 'detail']),
+  textHash: z.string(),
+  source: z.enum(['rule', 'ai']),
+  confidence: z.number().min(0).max(1).optional(),
 }) satisfies z.ZodType<ExtractedItem>
 
-const gapKindSchema = z.enum([
-  'missing-goal',
-  'missing-scope',
-  'missing-verification',
-  'missing-risk',
-  'ambiguous-scope',
-  'unresolved-question',
-]) satisfies z.ZodType<GapKind>
-
-export const gapSchema = z.object({
-  id: z.string(),
-  kind: gapKindSchema,
-  reason: z.string(),
-  severity: z.enum(['high', 'medium', 'low']),
-  confidence: z.number().min(0).max(1),
-}) satisfies z.ZodType<Gap>
+export const decisionCardSchema = z.object({
+  pointId: z.string(),
+  label: z.string().optional(),
+  chosen: z.string(),
+  rationale: z.string(),
+  rejected: z.array(
+    z.object({
+      option: z.string(),
+      reason: z.string(),
+    })
+  ),
+  status: z.enum(['decided', 'pending']),
+}) satisfies z.ZodType<DecisionCard>
 
 export const extractResultSchema = z.object({
-  items: z.array(extractedItemSchema),
-  gaps: z.array(gapSchema),
+  points: z.array(extractedItemSchema),
+  decisions: z.array(decisionCardSchema),
 }) satisfies z.ZodType<ExtractResult>
 
 export const confirmStateSchema = z.object({
