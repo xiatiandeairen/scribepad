@@ -87,25 +87,17 @@ export interface ExtractResult {
 }
 
 /**
- * Confidence confirmation — the human sign-off on an extracted item.
+ * Sign-off — the human confirmation that one information point is settled.
  *
- * Important + low-confidence items enter `open` (待确认); the user moves them to
- * `confirmed` or `rejected`. Confirmed items are protected from AI drift, reusing
- * the existing annotation lock mechanism. Persisted via the ReviewStore port
- * (user state only — never the extraction result itself).
- *
- * NOTE: ConfirmState is retained in this release to avoid breaking store-sidecar,
- * ports, annotation, and their unit tests. Removal is deferred to the persistence
- * refactor phase (plan-data-backend.md D3).
+ * Persisted user state (via the ReviewStore port). Unlike the retired lock
+ * model, a sign-off carries no anti-drift guarantee; it is an audit record of
+ * who approved which point and when.
  */
-export type ConfirmStatus = 'open' | 'confirmed' | 'rejected'
-
-export interface ConfirmState {
-  itemId: string
-  status: ConfirmStatus
-  /** confidence captured at extraction time, kept for audit. */
-  confidence: number
-  /** hash of item text at confirm time; a later text change re-opens for review. */
-  textHash: string
-  updatedAt: string
+export interface Signoff {
+  /** Stable id of the signed-off ExtractedItem (== its label when it has one). */
+  pointId: string
+  /** Human-facing label of the point at sign-off time (e.g. G1, D2). */
+  label: string
+  /** When the sign-off happened (ISO 8601). */
+  signedAt: string
 }

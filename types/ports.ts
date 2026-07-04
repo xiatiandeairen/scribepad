@@ -8,9 +8,8 @@
  * injected. See docs/refactor-plan.md §3.
  */
 import type { Result } from './result.js'
-import type { ConfirmState } from './domain.js'
 import type { Annotation } from './annotation.js'
-import type { PlanItemState } from './plan.js'
+import type { Signoff } from './domain.js'
 
 // ── LlmRunner ──────────────────────────────────────────────────────────────
 
@@ -47,8 +46,7 @@ export interface LlmRunner {
  */
 export interface ReviewState {
   annotations: Annotation[]
-  planState: PlanItemState[]
-  confirmStates: ConfirmState[]
+  signoffs: Signoff[]
 }
 
 export type StoreErrorKind = 'read' | 'write' | 'corrupt'

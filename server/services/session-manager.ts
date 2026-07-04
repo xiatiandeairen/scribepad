@@ -5,7 +5,8 @@ import type { Annotation } from '../../types/annotation.js'
 import type { SessionResponse } from '../../types/api.js'
 import type { DocSource, LlmRunner, ReviewState, ReviewStore } from '../../types/ports.js'
 import { createFsDocSource } from '../adapters/docsource-fs.js'
-import { createSidecarStore } from '../adapters/store-sidecar.js'
+import { createPlanStateShim, createSidecarStore } from '../adapters/store-sidecar.js'
+import type { PlanStateShim } from '../adapters/store-sidecar.js'
 import { createExecaRunner } from '../adapters/llm-execa.js'
 import { validateStateTransition } from '../../core/annotation-state.js'
 import { rewriteItems } from '../../core/rewrite.js'
@@ -63,6 +64,10 @@ export class SessionManager {
   private readonly getAiConfig: (() => AiConfig) | undefined
   private readonly docSource: DocSource
   private readonly reviewStore: ReviewStore
+  // HACK(delete with old-path retirement, see plan-frontend-integration Q3):
+  // plan-state persistence bypasses the ReviewStore port via an explicit legacy
+  // shim so the retiring old frontend's lock-after-refresh behavior is unchanged.
+  private readonly planStateShim: PlanStateShim
   private readonly llmRunner: LlmRunner | undefined
   private readonly sessions = new Map<string, DocumentSession>()
   private readonly sessionsByPath = new Map<string, string>()
@@ -80,6 +85,7 @@ export class SessionManager {
     this.docSource = options.docSource ?? createFsDocSource()
     this.reviewStore =
       options.reviewStore ?? createSidecarStore({ repoRoot: this.repoRoot, env: this.env })
+    this.planStateShim = createPlanStateShim({ repoRoot: this.repoRoot, env: this.env })
     this.llmRunner = options.llmRunner
     this.lastActivityAt = this.now().toISOString()
   }
@@ -216,25 +222,23 @@ export class SessionManager {
   async readPlanState(id: string): Promise<PlanItemState[]> {
     const session = this.getSession(id)
     this.touch(session)
-    return (await this.loadState(session.filePath)).planState
+    return this.planStateShim.loadPlanState(session.filePath)
   }
 
   async writePlanState(id: string, planState: PlanItemState[]): Promise<void> {
     const session = this.getSession(id)
-    const state = await this.loadState(session.filePath)
-    await this.saveState(session.filePath, { ...state, planState })
+    await this.planStateShim.savePlanState(session.filePath, planState)
     session.dirty = true
     this.touch(session)
   }
 
   async rewrite(id: string, fullDoc: string, items: RewriteItem[]): Promise<RewriteResultEntry[]> {
     const session = this.getSession(id)
-    const existing = (await this.loadState(session.filePath)).annotations
     this.touch(session)
     const aiConfig = this.getAiConfig?.()
     if (!aiConfig) throw new Error('AI config unavailable')
     const llm = this.llmRunner ?? createExecaRunner(aiConfig)
-    return rewriteItems(fullDoc, items, existing, llm)
+    return rewriteItems(fullDoc, items, llm)
   }
 
   async done(id: string, content?: string): Promise<DoneResult> {

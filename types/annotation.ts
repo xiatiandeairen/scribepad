@@ -1,5 +1,5 @@
 import type { PlanItemKind, PlanItemState } from './plan.js'
-import type { ConfirmState } from './domain.js'
+import type { Signoff } from './domain.js'
 
 /**
  * Annotation schema — source-range anchor.
@@ -81,9 +81,10 @@ export interface Sidecar {
   docPath?: string
   docRelativePath?: string
   annotations: Annotation[]
+  // Persisted by the legacy plan-state shim while the old frontend is retiring;
+  // optional so files predating it still parse.
   planState?: PlanItemState[]
-  // Additive since v4 (confidence confirmation, docs/refactor-plan.md §3.6).
-  // Optional so older sidecar files without the field still parse; a missing
-  // value is read as an empty list by the store.
-  confirmStates?: ConfirmState[]
+  // User sign-offs (the lock model's successor). Optional so older files parse;
+  // a missing value is read as an empty list by the store.
+  signoffs?: Signoff[]
 }

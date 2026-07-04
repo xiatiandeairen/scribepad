@@ -9,10 +9,10 @@ import { basename, dirname, join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { createSidecarStore } from '../../server/adapters/store-sidecar.js'
+import { createPlanStateShim, createSidecarStore } from '../../server/adapters/store-sidecar.js'
 import { documentStatePath } from '../../server/paths.js'
 import type { Annotation } from '../../types/annotation.js'
-import type { ConfirmState } from '../../types/domain.js'
+import type { Signoff } from '../../types/domain.js'
 import type { PlanItemState } from '../../types/plan.js'
 import type { ReviewState } from '../../types/ports.js'
 
@@ -44,14 +44,8 @@ function makePlanItem(id: string): PlanItemState {
   return { id, status: 'locked', textHash: 'abc123', updatedAt: '2026-01-01' }
 }
 
-function makeConfirmState(itemId: string): ConfirmState {
-  return {
-    itemId,
-    status: 'confirmed',
-    confidence: 0.42,
-    textHash: 'hash-1',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  }
+function makeSignoff(pointId: string): Signoff {
+  return { pointId, label: pointId.toUpperCase(), signedAt: '2026-01-01T00:00:00.000Z' }
 }
 
 describe('createSidecarStore — load missing sidecar', () => {
@@ -64,8 +58,7 @@ describe('createSidecarStore — load missing sidecar', () => {
     if (!res.ok) return
     expect(res.value).toEqual<ReviewState>({
       annotations: [],
-      planState: [],
-      confirmStates: [],
+      signoffs: [],
     })
   })
 })
@@ -77,8 +70,7 @@ describe('createSidecarStore — round-trip', () => {
 
     const state: ReviewState = {
       annotations: [makeAnnotation('a-1')],
-      planState: [makePlanItem('scope:1')],
-      confirmStates: [makeConfirmState('item-1')],
+      signoffs: [makeSignoff('g1')],
     }
     const saved = await store.save(docPath, state)
     expect(saved.ok).toBe(true)
@@ -91,14 +83,13 @@ describe('createSidecarStore — round-trip', () => {
 })
 
 describe('createSidecarStore — fields do not clobber each other', () => {
-  it('load-modify-save of one field preserves the other two', async () => {
+  it('load-modify-save of one field preserves the other', async () => {
     const { repoRoot, env, docPath } = await setup()
     const store = createSidecarStore({ repoRoot, env })
 
     await store.save(docPath, {
       annotations: [],
-      planState: [makePlanItem('scope:1')],
-      confirmStates: [makeConfirmState('item-1')],
+      signoffs: [makeSignoff('g1')],
     })
 
     // Realistic caller: load current state, change only annotations, save back.
@@ -111,34 +102,71 @@ describe('createSidecarStore — fields do not clobber each other', () => {
     expect(res.ok).toBe(true)
     if (!res.ok) return
     expect(res.value.annotations.map((a) => a.id)).toEqual(['a-1'])
-    expect(res.value.planState.map((p) => p.id)).toEqual(['scope:1'])
-    expect(res.value.confirmStates.map((c) => c.itemId)).toEqual(['item-1'])
+    expect(res.value.signoffs.map((s) => s.pointId)).toEqual(['g1'])
   })
 })
 
-describe('createSidecarStore — missing confirmStates in file', () => {
-  it('defaults confirmStates to an empty list when the field is absent', async () => {
+describe('createSidecarStore — G5: stored file preserved across a store round-trip', () => {
+  it('keeps annotations, plus shim-owned planState and unknown fields byte-for-byte', async () => {
     const { repoRoot, env, docPath } = await setup()
     const store = createSidecarStore({ repoRoot, env })
 
-    // Write a sidecar (via the store) that has no confirmStates, then hand-edit
-    // is unnecessary: save with an empty confirmStates and confirm read default.
-    await store.save(docPath, {
-      annotations: [makeAnnotation('a-1')],
-      planState: [],
-      confirmStates: [],
-    })
-
-    // Simulate an older file on disk: overwrite it without the confirmStates key.
+    // A stored v4 file carrying every field variant: annotations + signoffs the
+    // store owns, planState the legacy shim owns, and a retired confirmStates the
+    // type no longer knows about. None may be dropped on the next store save
+    // (spread-existing invariant, G5).
+    await store.save(docPath, { annotations: [makeAnnotation('a-1')], signoffs: [makeSignoff('g1')] })
     const p = documentStatePath(repoRoot, docPath, env)
     const onDisk = JSON.parse(await readFile(p, 'utf8')) as Record<string, unknown>
-    delete onDisk.confirmStates
+    const legacyPlanState = [makePlanItem('scope:1')]
+    const legacyConfirmStates = [
+      { itemId: 'item-1', status: 'confirmed', confidence: 0.42, textHash: 'h', updatedAt: 'x' },
+    ]
+    onDisk.planState = legacyPlanState
+    onDisk.confirmStates = legacyConfirmStates
     await writeFile(p, JSON.stringify(onDisk), 'utf8')
 
-    const res = await store.load(docPath)
-    expect(res.ok).toBe(true)
-    if (!res.ok) return
-    expect(res.value.confirmStates).toEqual([])
+    // A realistic caller round-trips only the fields the store owns.
+    const loaded = await store.load(docPath)
+    expect(loaded.ok).toBe(true)
+    if (!loaded.ok) return
+    await store.save(docPath, { ...loaded.value, annotations: [makeAnnotation('a-2')] })
+
+    const after = JSON.parse(await readFile(p, 'utf8')) as Record<string, unknown>
+    expect((after.annotations as Annotation[]).map((a) => a.id)).toEqual(['a-2'])
+    expect(after.planState).toEqual(legacyPlanState)
+    expect(after.confirmStates).toEqual(legacyConfirmStates)
+  })
+})
+
+describe('createPlanStateShim — legacy plan-state accessor', () => {
+  it('round-trips planState against the sidecar file', async () => {
+    const { repoRoot, env, docPath } = await setup()
+    const shim = createPlanStateShim({ repoRoot, env })
+
+    expect(await shim.loadPlanState(docPath)).toEqual([])
+    await shim.savePlanState(docPath, [makePlanItem('scope:1')])
+    expect((await shim.loadPlanState(docPath)).map((p) => p.id)).toEqual(['scope:1'])
+  })
+
+  it('does not clobber store-owned annotations / signoffs, and vice versa', async () => {
+    const { repoRoot, env, docPath } = await setup()
+    const store = createSidecarStore({ repoRoot, env })
+    const shim = createPlanStateShim({ repoRoot, env })
+
+    await store.save(docPath, { annotations: [makeAnnotation('a-1')], signoffs: [makeSignoff('g1')] })
+    await shim.savePlanState(docPath, [makePlanItem('scope:1')])
+
+    // Store still sees its own fields; the shim write did not touch them.
+    const loaded = await store.load(docPath)
+    expect(loaded.ok).toBe(true)
+    if (!loaded.ok) return
+    expect(loaded.value.annotations.map((a) => a.id)).toEqual(['a-1'])
+    expect(loaded.value.signoffs.map((s) => s.pointId)).toEqual(['g1'])
+
+    // A later store save must not drop the shim-owned planState.
+    await store.save(docPath, { ...loaded.value, annotations: [makeAnnotation('a-2')] })
+    expect((await shim.loadPlanState(docPath)).map((p) => p.id)).toEqual(['scope:1'])
   })
 })
 

@@ -1,17 +1,18 @@
 /**
- * core/rewrite — the rewrite use-case: anti-drift filter + agent task.
+ * core/rewrite — the rewrite use-case: agent task orchestration.
  *
  * Pure orchestration (E0): the LlmRunner is injected, so this has no execa/fs.
- * Decided annotations are filtered out before the LLM ever sees them — this is
- * scribepad's anti-drift guard. Extracted from the old services/rewrite during
- * the P4.3 cutover onto core/agent's runTask.
+ *
+ * NOTE: the old server-side anti-drift filter (dropping decided annotations
+ * before the prompt) was removed with D3; grounding is now the drift defense.
+ * Extracted from the old services/rewrite during the P4.3 cutover onto
+ * core/agent's runTask.
  */
 import { z } from 'zod'
 import { runTask } from './agent/runner.js'
 import type { TaskSpec } from './agent/task.js'
 import type { LlmRunner } from '../types/ports.js'
 import type { RewriteItem, RewriteResultEntry } from '../types/api.js'
-import type { Annotation } from '../types/annotation.js'
 
 interface RewriteTaskInput {
   fullDoc: string
@@ -46,26 +47,16 @@ ${itemsJson}`
 /**
  * Rewrite the given selections via the injected LLM.
  *
- * Anti-drift: items whose id matches a `decided` annotation are dropped before
- * the prompt is built and returned with an empty `rewritten` placeholder, in the
- * original request order. Throws when every requested item is decided (callers
- * surface this as a 4xx/5xx). Throws when the agent task fails after retries.
+ * Returns one entry per requested item in the original order; items the LLM
+ * did not return fall back to an empty `rewritten` placeholder. Throws when the
+ * agent task fails after retries.
  */
 export async function rewriteItems(
   fullDoc: string,
   items: RewriteItem[],
-  existingAnnotations: Annotation[],
   llm: LlmRunner,
 ): Promise<RewriteResultEntry[]> {
-  const decidedIds = new Set(
-    existingAnnotations.filter((a) => a.state === 'decided').map((a) => a.id),
-  )
-  const filtered = items.filter((it) => !decidedIds.has(it.id))
-  if (filtered.length === 0) {
-    throw new Error('all selected items are state=decided; cannot rewrite')
-  }
-
-  const result = await runTask(rewriteTask, { fullDoc, items: filtered }, llm)
+  const result = await runTask(rewriteTask, { fullDoc, items }, llm)
   if (!result.ok) {
     throw new Error(
       `rewrite failed after ${result.error.attempts} attempt(s): ${result.error.message}`,
@@ -75,6 +66,6 @@ export async function rewriteItems(
   const rewrittenById = new Map(result.value.map((r) => [r.id, r.rewritten]))
   return items.map((it) => ({
     id: it.id,
-    rewritten: decidedIds.has(it.id) ? '' : (rewrittenById.get(it.id) ?? ''),
+    rewritten: rewrittenById.get(it.id) ?? '',
   }))
 }

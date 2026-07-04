@@ -9,11 +9,11 @@
  */
 import { z } from 'zod'
 import type {
-  ConfirmState,
   DecisionCard,
   ExtractResult,
   ExtractedItem,
   InfoKind,
+  Signoff,
 } from '../types/domain.js'
 
 const infoKindSchema = z.enum([
@@ -71,10 +71,8 @@ export const extractResultSchema = z.object({
   decisions: z.array(decisionCardSchema),
 }) satisfies z.ZodType<ExtractResult>
 
-export const confirmStateSchema = z.object({
-  itemId: z.string(),
-  status: z.enum(['open', 'confirmed', 'rejected']),
-  confidence: z.number().min(0).max(1),
-  textHash: z.string(),
-  updatedAt: z.string(),
-}) satisfies z.ZodType<ConfirmState>
+export const signoffSchema = z.object({
+  pointId: z.string(),
+  label: z.string(),
+  signedAt: z.string(),
+}) satisfies z.ZodType<Signoff>

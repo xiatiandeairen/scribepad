@@ -276,50 +276,6 @@ test.describe('P0 product flows', () => {
     await expect(page.locator('mark.anno.draft')).toBeVisible()
   })
 
-  test('P0.7 真实后端会拒绝 decided 段的 rewrite 请求', async ({ page }) => {
-    await page.goto('/')
-    await waitForReaderReady(page)
-
-    const selected = await createAnnotation(page, {
-      paragraphSelector: '.reader',
-      substring: '成熟身份提供商',
-    })
-    await waitForAnnotationCount(page, 1)
-    await promoteFirstAnnotationToDecided(page)
-
-    const result = await page.evaluate(async () => {
-      const annotationsRes = await fetch('/api/annotations')
-      const annotationsJson = (await annotationsRes.json()) as {
-        annotations: Array<{ id: string; anchor: { text: string } }>
-      }
-      const fileRes = await fetch('/api/file')
-      const file = (await fileRes.json()) as { content: string }
-      const annotation = annotationsJson.annotations[0]
-      const rewriteRes = await fetch('/api/rewrite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fullDoc: file.content,
-          items: [
-            {
-              id: annotation.id,
-              selection: annotation.anchor.text,
-              instruction: '改写这个已决定段',
-            },
-          ],
-        }),
-      })
-      return {
-        status: rewriteRes.status,
-        body: (await rewriteRes.json()) as { error?: string },
-      }
-    })
-
-    expect(selected).toBe('成熟身份提供商')
-    expect(result.status).toBe(500)
-    expect(result.body.error).toContain('cannot rewrite')
-  })
-
   test('P0.8 接受一处改写后，其他 open 批注仍可打开并接受', async ({ page }) => {
     await mockRewrite(page)
     await page.goto('/')

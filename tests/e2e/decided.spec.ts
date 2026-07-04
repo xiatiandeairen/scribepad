@@ -1,14 +1,14 @@
 /**
- * decided.spec — flow #6-#7: 拍板 lock + 防漂移 + graceful error UX.
+ * decided.spec — flow #6-#7: 拍板 lock + graceful error UX.
  *
- * Three assertions tied to docs/plan.md §1.4 + §1.2:
+ * Two assertions tied to docs/plan.md §1.4 + §1.2:
  *   (1) An annotation in `state=decided` renders a green/locked card and a
  *       `mark.anno.decided` highlight in the reader.
- *   (2) The server's 防漂移 filter (services/rewrite.ts) rejects rewrite
- *       requests for decided segments — verified by calling /api/rewrite
- *       directly with a real (un-mocked) backend.
- *   (3) When /api/rewrite fails (500), the UI shows a `.toast` and reverts
+ *   (2) When /api/rewrite fails (500), the UI shows a `.toast` and reverts
  *       the in-flight annotation back to draft (App.tsx error path).
+ *
+ * NOTE: the old server-side 防漂移 rewrite rejection was removed with D3, so
+ * there is no longer a real-backend "blocks rewrite for decided" assertion here.
  *
  * Sidebar's `⋯` menu button is render-only (v0.2 deferred), so we trigger
  * the lock by writing directly through the public `/api/annotations` endpoint
@@ -22,7 +22,7 @@ test.describe('decided flow + 防漂移', () => {
     clearSidecar()
   })
 
-  test('locked annotation renders decided variant + server blocks rewrite', async ({ page }) => {
+  test('locked annotation renders decided variant', async ({ page }) => {
     await page.goto('/')
     await waitForReaderReady(page)
 
@@ -47,28 +47,6 @@ test.describe('decided flow + 防漂移', () => {
     await expect(card).toBeVisible()
     await expect(card).toContainText('已锁定')
     await expect(page.locator('mark.anno.decided')).toBeVisible()
-
-    // 防漂移: real backend should reject the rewrite for a decided id.
-    const blocked = await page.evaluate(async () => {
-      const annosRes = await fetch('/api/annotations')
-      const data = (await annosRes.json()) as {
-        annotations: Array<{ id: string; anchor: { text: string } }>
-      }
-      const a = data.annotations[0]
-      const fileRes = await fetch('/api/file')
-      const file = (await fileRes.json()) as { content: string }
-      const res = await fetch('/api/rewrite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fullDoc: file.content,
-          items: [{ id: a.id, selection: a.anchor.text, instruction: '改写一下' }],
-        }),
-      })
-      return { status: res.status, body: (await res.json()) as { error?: string } }
-    })
-    expect(blocked.status).toBe(500)
-    expect(blocked.body.error).toContain('cannot rewrite')
   })
 
   test('rewrite 500 error surfaces a toast and reverts state to draft', async ({ page }) => {
