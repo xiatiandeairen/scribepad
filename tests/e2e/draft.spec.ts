@@ -116,7 +116,7 @@ test.describe('draft flow', () => {
     await expect(card).toBeVisible()
     await expect(card).not.toContainText(selected)
     await expect(card.locator('textarea[placeholder="告诉 AI 怎么改…"]')).toBeVisible()
-    await expect(card.locator('button[aria-label="提交批注"]')).toBeVisible()
+    await expect(card.locator('button[aria-label="请求 AI 改写"]')).toBeVisible()
     await expect(card.locator('button[aria-label="取消批注"]')).toBeVisible()
 
     // Reader: a <mark class="anno draft"> wraps the selected text.
