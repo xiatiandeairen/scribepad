@@ -1,0 +1,199 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+import { byLabel, extract, relatedPoints } from '../../core/extract/index.js'
+
+const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+const readFixture = (name: string): string => readFileSync(repoRoot + name, 'utf8')
+
+const soc2 = extract(readFixture('plan-auth-soc2.md'))
+const sample = extract(readFixture('sample.md'))
+const degraded = extract(readFixture('tests/fixtures/plan-degraded.md'))
+const light = extract(readFixture('tests/fixtures/plan-light.md'))
+
+describe('extract(plan-auth-soc2.md) — the compliant benchmark', () => {
+  it('recognizes all 8 sections (one point per InfoKind)', () => {
+    const kinds = new Set(soc2.points.map((point) => point.kind))
+    expect([...kinds].sort()).toEqual([
+      'behavior',
+      'decision',
+      'goal',
+      'open-question',
+      'precondition',
+      'risk',
+      'scope',
+      'verification',
+    ])
+  })
+
+  it('extracts four labelled goal constraints G1–G4', () => {
+    const labels = soc2.points
+      .filter((point) => point.kind === 'goal' && point.label)
+      .map((point) => point.label)
+    expect(labels).toEqual(['G1', 'G2', 'G3', 'G4'])
+  })
+
+  it('extracts three decision cards, D1 fully parsed and decided', () => {
+    expect(soc2.decisions).toHaveLength(3)
+    const d1 = soc2.decisions.find((card) => card.label === 'D1')
+    expect(d1).toBeDefined()
+    expect(d1!.status).toBe('decided')
+    expect(d1!.chosen.length).toBeGreaterThan(0)
+    expect(d1!.rationale.length).toBeGreaterThan(0)
+    expect(d1!.rejected).toHaveLength(2)
+    for (const rejected of d1!.rejected) {
+      expect(rejected.option.length).toBeGreaterThan(0)
+      expect(rejected.reason.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('labels the remaining role points (R/P/Q) by table/list prefix', () => {
+    const labelsFor = (kind: string) =>
+      soc2.points.filter((point) => point.kind === kind && point.label).map((point) => point.label)
+    expect(labelsFor('risk')).toEqual(['R1', 'R2', 'R3', 'R4', 'R5'])
+    expect(labelsFor('precondition')).toEqual(['P1', 'P2', 'P3', 'P4'])
+    expect(labelsFor('open-question')).toEqual(['Q1', 'Q2', 'Q3', 'Q4', 'Q5'])
+  })
+
+  it('grounds cross-references: labelled ids, self-nav, prefix/kind isolation', () => {
+    // D4 rule: a labelled point's id is its label.
+    const g1 = byLabel(soc2)['G1']
+    expect(g1?.id).toBe('G1')
+
+    // R2's mitigation cites （G1 ...）; the ref graph must capture it.
+    expect(soc2.points.find((point) => point.label === 'R2')?.refs).toContain('G1')
+
+    // A verification checkbox prefixed **G2** references goal G2, it does NOT
+    // become a V-owned label — otherwise two items collide on the same id.
+    const verification = soc2.points.filter((point) => point.kind === 'verification')
+    expect(verification.every((point) => point.label === undefined)).toBe(true)
+    expect(verification.filter((point) => point.refs.some((ref) => /^[GD]/.test(ref)))
+      .length).toBeGreaterThanOrEqual(7)
+
+    // byLabel navigates a decision label to its decision point.
+    expect(byLabel(soc2)['D2']?.kind).toBe('decision')
+  })
+
+  it('relatedPoints walks the reference graph off a label', () => {
+    const related = relatedPoints(soc2, 'G1')
+    // R2 references G1, so it must appear as an in-edge neighbour.
+    expect(related.some((point) => point.label === 'R2')).toBe(true)
+  })
+})
+
+describe('extract(sample.md) — the degraded counter-sample', () => {
+  it('detects the multi-candidate options 方案 B/C/D without a decision section', () => {
+    const candidates = new Set(
+      sample.points
+        .filter((point) => point.kind === 'behavior')
+        .flatMap((point) => {
+          const match = point.text.match(/方案\s*([BCD])/)
+          return match ? [match[1]!] : []
+        }),
+    )
+    expect([...candidates].sort()).toEqual(['B', 'C', 'D'])
+    // No 决策 section present -> no decision cards, and no throw.
+    expect(sample.decisions).toHaveLength(0)
+  })
+
+  it('degrades a non-8-section document to a partial result instead of throwing', () => {
+    const kinds = new Set(sample.points.map((point) => point.kind))
+    expect([...kinds].sort()).toEqual(['behavior', 'goal', 'open-question', 'scope'])
+  })
+
+  it('never throws on a document with no recognizable sections', () => {
+    expect(() => extract('# just a title\n\nsome prose, no H2 sections at all.')).not.toThrow()
+    expect(extract('plain text').points).toHaveLength(0)
+  })
+})
+
+describe('extract(tests/fixtures/plan-light.md) — light-tier fixture', () => {
+  it('recognizes exactly goal / behavior / verification (three-role light plan)', () => {
+    const kinds = new Set(light.points.map((point) => point.kind))
+    expect([...kinds].sort()).toEqual(['behavior', 'goal', 'verification'])
+  })
+
+  it('extracts one labelled goal constraint G1', () => {
+    const g1 = light.points.filter((point) => point.kind === 'goal' && point.label === 'G1')
+    expect(g1).toHaveLength(1)
+  })
+
+  it('produces no decision cards (no multi-candidate trigger in light plans)', () => {
+    expect(light.decisions).toHaveLength(0)
+  })
+
+  it('verification point refs G1 (grounding the acceptance to the goal)', () => {
+    const vPoints = light.points.filter((point) => point.kind === 'verification')
+    expect(vPoints.some((point) => point.refs.includes('G1'))).toBe(true)
+  })
+})
+
+describe('extract(tests/fixtures/plan-degraded.md) — decided D1 with missing verification', () => {
+  it('extracts four roles: goal / scope / decision / behavior (no verification section)', () => {
+    const kinds = new Set(degraded.points.map((point) => point.kind))
+    expect([...kinds].sort()).toEqual(['behavior', 'decision', 'goal', 'scope'])
+  })
+
+  it('extracts one decided decision card D1 with full three-part structure', () => {
+    expect(degraded.decisions).toHaveLength(1)
+    const d1 = degraded.decisions[0]!
+    expect(d1.label).toBe('D1')
+    expect(d1.status).toBe('decided')
+    expect(d1.chosen.length).toBeGreaterThan(0)
+    expect(d1.rationale.length).toBeGreaterThan(0)
+    expect(d1.rejected).toHaveLength(1)
+    expect(d1.rejected[0]!.option.length).toBeGreaterThan(0)
+    expect(d1.rejected[0]!.reason.length).toBeGreaterThan(0)
+  })
+})
+
+describe('extract — boundary cases', () => {
+  it('decision card three-part degradation: falls back gracefully when structure is absent', () => {
+    // A decision H3 with no 选了什么/为什么/否掉了谁 leads → the parser degrades
+    // rather than throws: chosen = full body text, rationale = '', rejected = [].
+    const src = [
+      '# Plan',
+      '',
+      '## 决策',
+      '',
+      '### D1:选型',
+      '',
+      '这是一段无三段结构的说明文字，没有选了什么/为什么/否掉了谁引导词。',
+    ].join('\n')
+    const result = extract(src)
+    expect(result.decisions).toHaveLength(1)
+    const card = result.decisions[0]!
+    // No ✅/已定 marker → pending
+    expect(card.status).toBe('pending')
+    // Fallback: chosen gets the full body text (non-empty)
+    expect(card.chosen.length).toBeGreaterThan(0)
+    // rationale falls back to empty string
+    expect(card.rationale).toBe('')
+    // rejected is an empty array
+    expect(card.rejected).toHaveLength(0)
+  })
+
+  it('dangling refs are preserved in point.refs without throwing', () => {
+    // G9 is referenced in behavior text but never defined as a goal label.
+    // extract must preserve the dangling ref verbatim — validation is downstream.
+    const src = [
+      '# Plan',
+      '',
+      '## 目标',
+      '- **G1** 目标，可判定标准：明确结果。',
+      '',
+      '## 做法',
+      '1. 完成配置迁移，依赖 G9 不存在的约束标签。',
+      '',
+      '## 验收',
+      '- [ ] **G1** 验收通过。',
+    ].join('\n')
+    expect(() => extract(src)).not.toThrow()
+    const result = extract(src)
+    const g1 = result.points.find((point) => point.label === 'G1')
+    expect(g1).toBeDefined()
+    // The behavior point references G9 even though G9 is not defined
+    const behaviorPoints = result.points.filter((point) => point.kind === 'behavior')
+    expect(behaviorPoints.some((point) => point.refs.includes('G9'))).toBe(true)
+  })
+})
