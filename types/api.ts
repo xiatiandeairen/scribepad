@@ -194,6 +194,50 @@ export interface DoneSessionResponse {
   outputPath: string
 }
 
+// POST /api/sessions/:sessionId/agent — the single AI channel (SSE response).
+//
+// All AI behaviour flows through one endpoint: the client posts an AgentRequest
+// and reads back a stream of AgentEvent (progress* → final). The four request
+// shapes mirror the frontend's agent.send() sources; the server dispatches on
+// `type` (+ `op` / `id`). command / selection-op:explain are wired in P5;
+// selection-op dcard|risk|open land in P6 and analyze-notes in v2 — those return
+// a not-implemented `final` rather than a fabricated result.
+
+/** One note fed to analyze-notes. Loose by design — the feature is a v2 placeholder. */
+export interface AgentNote {
+  pt?: string
+  text?: string
+}
+
+export type AgentRequest =
+  | { type: 'chat'; text: string; quote?: string }
+  | { type: 'selection-op'; op: 'dcard' | 'risk' | 'open' | 'explain'; quote: string }
+  | { type: 'analyze-notes'; notes: AgentNote[] }
+  | { type: 'command'; id: 'ai-review' | 'ai-refs' }
+
+/**
+ * One action card in a final agent reply. `pt` (when present) is a real label
+ * the frontend can click to jump to a tab; `sec` jumps to a section. The server
+ * must never emit a `pt` that does not resolve to a defined label.
+ */
+export interface AgentAction {
+  icon: string
+  kind: string
+  title: string
+  sub: string
+  pt?: string
+  sec?: string
+}
+
+/**
+ * One server-sent event on the agent stream. `progress` is a coarse, honest
+ * phase label (assembling context / calling / …), emitted zero or more times;
+ * `final` is the single terminal reply and closes the stream.
+ */
+export type AgentEvent =
+  | { type: 'progress'; label: string }
+  | { type: 'final'; paragraphs: string[]; actions: AgentAction[] }
+
 // Generic error
 export interface ErrorResponse {
   error: string

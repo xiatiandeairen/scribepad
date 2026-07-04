@@ -363,6 +363,16 @@ export class SessionManager {
     return this.now().getTime() - Date.parse(this.lastActivityAt) > idleMs
   }
 
+  /**
+   * The LLM runner for this session — the injected fake in tests, otherwise a
+   * per-call execa adapter built from the AI config. Throws when no config is
+   * available. Public so the agent SSE route can resolve it lazily (only chat /
+   * explain paths need it; zero-LLM commands never call this).
+   */
+  getLlmRunner(): LlmRunner {
+    return this.resolveLlm()
+  }
+
   private resolveLlm(): LlmRunner {
     if (this.llmRunner) return this.llmRunner
     const aiConfig = this.getAiConfig?.()

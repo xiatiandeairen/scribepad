@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
+import { streamSSE } from 'hono/streaming'
 import type { AppContext } from '../app.js'
 import type {
+  AgentRequest,
   AnnotationsRequest,
   AnnotationsResponse,
   ConnectSessionResponse,
@@ -28,6 +30,7 @@ import {
   normalizeReviewPlanRequest,
   ReviewNormalizeInputError,
 } from '../services/review-normalize.js'
+import { dispatchAgent } from '../services/agent-dispatch.js'
 import { RewriteApplyConflictError } from '../services/session-manager.js'
 
 export function sessionsRoute(ctx: AppContext) {
@@ -199,6 +202,39 @@ export function sessionsRoute(ctx: AppContext) {
       const err: ErrorResponse = { error: String((e as Error).message ?? e) }
       return c.json(err, e instanceof ReviewNormalizeInputError ? 400 : 500)
     }
+  })
+
+  app.post('/sessions/:sessionId/agent', async (c) => {
+    const sessionId = c.req.param('sessionId')
+    // Validate the session before opening the stream so an unknown session is a
+    // plain 404, not an SSE error frame the client has to decode.
+    try {
+      ctx.sessionManager.getSession(sessionId)
+    } catch (e) {
+      const err: ErrorResponse = { error: String((e as Error).message ?? e) }
+      return c.json(err, 404)
+    }
+
+    const request = (await c.req.json()) as AgentRequest
+    const extract = await ctx.sessionManager.extract(sessionId)
+    const { content } = await ctx.sessionManager.readFile(sessionId)
+
+    // Client disconnect → abort: stop pumping events. The in-flight LLM call
+    // itself is not cancellable through the LlmRunner port, so it finishes in the
+    // background and its result is dropped (see AgentDispatchDeps.signal).
+    const controller = new AbortController()
+    return streamSSE(c, async (stream) => {
+      stream.onAbort(() => controller.abort())
+      for await (const event of dispatchAgent(request, {
+        extract,
+        source: content,
+        resolveLlm: () => ctx.sessionManager.getLlmRunner(),
+        signal: controller.signal,
+      })) {
+        if (controller.signal.aborted) break
+        await stream.writeSSE({ data: JSON.stringify(event) })
+      }
+    })
   })
 
   app.post('/sessions/:sessionId/done', async (c) => {
