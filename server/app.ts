@@ -52,6 +52,19 @@ export function createApp(ctx: AppContext) {
   app.get('/healthz', (c) => c.json({ ok: true }))
   app.get('/api/healthz', (c) => c.json({ ok: true }))
 
+  // No-build Claude Design frontend (D-5): serve client-next/ at /next/* in both
+  // dev and prod. Independent of the SPA block below (no build step, no bundler);
+  // mounted after /api and before the SPA catch-all so route precedence is
+  // /api → /next → SPA fallback. Absent client-next/ (e.g. published npm package)
+  // just 404s — no build coupling.
+  const nextDir = resolve(ctx.repoRoot, 'client-next')
+  if (existsSync(nextDir)) {
+    app.use(
+      '/next/*',
+      serveStatic({ root: nextDir, rewriteRequestPath: (p) => p.replace(/^\/next/, '') }),
+    )
+  }
+
   // Prod-only static serving (review G3 #1).
   // Skip entirely in dev — dev clients live on Vite (:5173) and proxy /api → here.
   // Otherwise stale dist/client (from a prior build) would shadow the live Vite UI

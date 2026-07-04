@@ -6,3 +6,6 @@ sample.md
 *.md
 package-lock.json
 preview
+# No-build Claude Design frontend (D-5): kept verbatim in its own JS style, not
+# subject to repo prettier config. eslint already ignores .jsx files.
+client-next
