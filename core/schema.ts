@@ -37,6 +37,11 @@ const itemPathSchema = z.object({
   groupTitle: z.string().optional(),
 })
 
+const cellFactSchema = z.object({
+  header: z.string(),
+  text: z.string(),
+})
+
 export const extractedItemSchema = z.object({
   id: z.string(),
   kind: infoKindSchema,
@@ -50,6 +55,8 @@ export const extractedItemSchema = z.object({
   textHash: z.string(),
   source: z.enum(['rule', 'ai']),
   confidence: z.number().min(0).max(1).optional(),
+  cells: z.array(cellFactSchema).optional(),
+  group: z.string().optional(),
 }) satisfies z.ZodType<ExtractedItem>
 
 export const decisionCardSchema = z.object({
@@ -64,11 +71,22 @@ export const decisionCardSchema = z.object({
     }),
   ),
   status: z.enum(['decided', 'pending']),
+  pick: z.string().optional(),
+  question: z.string().optional(),
+  core: z.literal(true).optional(),
+  cost: z.string().optional(),
+  facts: z.string().optional(),
 }) satisfies z.ZodType<DecisionCard>
+
+const docMetaSchema = z.object({
+  title: z.string().optional(),
+  intro: z.string().optional(),
+})
 
 export const extractResultSchema = z.object({
   points: z.array(extractedItemSchema),
   decisions: z.array(decisionCardSchema),
+  meta: docMetaSchema.optional(),
 }) satisfies z.ZodType<ExtractResult>
 
 export const signoffSchema = z.object({

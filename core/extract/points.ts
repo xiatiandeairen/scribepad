@@ -7,8 +7,8 @@
  * The decision section is handled separately (decisions.ts) because it also
  * emits DecisionCards; everything else routes through here.
  */
-import type { List, ListItem, Nodes, Table, TableCell, TableRow } from 'mdast'
-import type { ExtractedItem, SrcAnchor } from '../../types/domain.js'
+import type { List, ListItem, Nodes, Paragraph, Table, TableCell, TableRow } from 'mdast'
+import type { CellFact, ExtractedItem, SrcAnchor } from '../../types/domain.js'
 import type { SectionSource } from './sections.js'
 import { labelOf, scanRefs } from './labels.js'
 import { compact, hash, slug, textOf } from './text.js'
@@ -18,6 +18,8 @@ interface RawItem {
   node: Nodes
   role: 'checkpoint' | 'detail'
   groupTitle?: string
+  cells?: CellFact[]
+  group?: string
 }
 
 interface H3Group {
@@ -32,8 +34,14 @@ export function pointsFromSection(section: SectionSource): ExtractedItem[] {
   for (const group of splitByH3(section.nodes)) {
     if (group.heading !== undefined && group.headingNode) {
       // The H3 itself is the checkpoint; its body items hang off it as details.
-      raws.push({ text: group.heading, node: group.headingNode, role: 'checkpoint', groupTitle: group.heading })
-      for (const raw of collectBlockItems(group.nodes)) {
+      // The H3 heading seeds `group` for its body, which a bold lead-in refines.
+      raws.push({
+        text: group.heading,
+        node: group.headingNode,
+        role: 'checkpoint',
+        groupTitle: group.heading,
+      })
+      for (const raw of collectBlockItems(group.nodes, group.heading)) {
         raws.push({ ...raw, role: 'detail', groupTitle: group.heading })
       }
     } else {
@@ -69,48 +77,83 @@ function splitByH3(nodes: Nodes[]): H3Group[] {
 interface BlockItem {
   text: string
   node: Nodes
+  cells?: CellFact[]
+  group?: string
 }
 
-function collectBlockItems(nodes: Nodes[]): BlockItem[] {
+/**
+ * Collect items in source order while tracking the current sub-group: a
+ * top-level bold lead-in paragraph (`**范围内**：…`) sets the group for itself
+ * and every following item until the next lead-in. `baseGroup` (an enclosing H3
+ * heading) is the fallback when no lead-in has been seen. Bold inside list items
+ * (behavior steps) does not reset the group — only block-level paragraphs do.
+ */
+function collectBlockItems(nodes: Nodes[], baseGroup?: string): BlockItem[] {
   const items: BlockItem[] = []
+  let group = baseGroup
   for (const node of nodes) {
     if (node.type === 'paragraph') {
+      const lead = boldLeadOf(node)
+      if (lead) group = lead
       const text = compact(textOf(node))
-      if (text) items.push({ text, node })
+      if (text) items.push({ text, node, ...(group ? { group } : {}) })
     } else if (node.type === 'list') {
-      collectListItems(node, items)
+      collectListItems(node, items, group)
     } else if (node.type === 'table') {
-      collectTableRows(node, items)
+      collectTableRows(node, items, group)
     }
   }
   return items
 }
 
-function collectListItems(list: List, items: BlockItem[]): void {
+/** The bold text of a lead-in paragraph (first inline child is `strong`), else undefined. */
+function boldLeadOf(paragraph: Paragraph): string | undefined {
+  const first = paragraph.children[0]
+  if (first?.type !== 'strong') return undefined
+  const bold = compact(textOf(first))
+  return bold || undefined
+}
+
+function collectListItems(list: List, items: BlockItem[], group?: string): void {
   for (const child of list.children as ListItem[]) {
     const paragraph = child.children.find((node) => node.type === 'paragraph')
     if (paragraph) {
       const text = compact(textOf(paragraph))
       // Anchor to the whole list item so a checkbox / nested content stays in range.
-      if (text) items.push({ text, node: child })
+      if (text) items.push({ text, node: child, ...(group ? { group } : {}) })
     }
     for (const nested of child.children) {
-      if (nested.type === 'list') collectListItems(nested, items)
+      if (nested.type === 'list') collectListItems(nested, items, group)
     }
   }
 }
 
-function collectTableRows(table: Table, items: BlockItem[]): void {
+function collectTableRows(table: Table, items: BlockItem[], group?: string): void {
   const rows = table.children as TableRow[]
   // Row 0 is the GFM header; data rows start at 1.
+  const headers =
+    (rows[0]?.children as TableCell[] | undefined)?.map((cell) => compact(textOf(cell))) ?? []
   for (let index = 1; index < rows.length; index += 1) {
-    const cells = (rows[index]!.children as TableCell[]).map((cell) => compact(textOf(cell)))
-    const text = cells.filter(Boolean).join(' | ')
-    if (text) items.push({ text, node: rows[index]! })
+    const values = (rows[index]!.children as TableCell[]).map((cell) => compact(textOf(cell)))
+    const text = values.filter(Boolean).join(' | ')
+    if (!text) continue
+    // Keep every column (header × this row's value) as a structural fact, even
+    // empty ones, so column order and identity survive for the frontend to map.
+    const cells: CellFact[] = headers.map((header, col) => ({ header, text: values[col] ?? '' }))
+    items.push({
+      text,
+      node: rows[index]!,
+      ...(cells.length ? { cells } : {}),
+      ...(group ? { group } : {}),
+    })
   }
 }
 
-function buildPoint(section: SectionSource, raw: RawItem, counter: { value: number }): ExtractedItem {
+function buildPoint(
+  section: SectionSource,
+  raw: RawItem,
+  counter: { value: number },
+): ExtractedItem {
   const label = labelOf(section.kind, raw.text)
   const groupKey = raw.groupTitle ? slug(raw.groupTitle) : 'root'
   const id = label ?? `${section.kind}:${section.order}:${groupKey}:${counter.value}`
@@ -132,6 +175,8 @@ function buildPoint(section: SectionSource, raw: RawItem, counter: { value: numb
   if (label) item.label = label
   const anchor = anchorOf(raw.node)
   if (anchor) item.anchor = anchor
+  if (raw.cells) item.cells = raw.cells
+  if (raw.group) item.group = raw.group
   return item
 }
 

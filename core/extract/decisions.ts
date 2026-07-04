@@ -10,20 +10,30 @@
  * back to the whole body, rationale to '', rejected to [] — extraction never
  * throws on a loosely-written decision; that is the validator's job.
  */
-import type { List, ListItem, Nodes, Table, TableCell, TableRow } from 'mdast'
+import type { Heading, List, ListItem, Nodes, Table, TableCell, TableRow } from 'mdast'
 import type { DecisionCard, ExtractedItem } from '../../types/domain.js'
 import type { SectionSource } from './sections.js'
 import { labelOf, scanRefs } from './labels.js'
 import { anchorOf } from './points.js'
 import { compact, hash, textOf } from './text.js'
 
-type SegmentKind = 'none' | 'chosen' | 'rationale' | 'rejected'
+type SegmentKind = 'none' | 'chosen' | 'rationale' | 'rejected' | 'cost' | 'facts'
 
+// Fixed lead-in table (Q1: 本期固定词表 + 降级不 throw). Longer keywords first
+// so 依赖面事实 wins over a bare 事实 when both could prefix-match.
 const LEADS: Array<{ keyword: string; segment: Exclude<SegmentKind, 'none'> }> = [
   { keyword: '选了什么', segment: 'chosen' },
   { keyword: '为什么', segment: 'rationale' },
   { keyword: '否掉了谁', segment: 'rejected' },
+  { keyword: '代价', segment: 'cost' },
+  { keyword: '依赖面事实', segment: 'facts' },
+  { keyword: '事实', segment: 'facts' },
 ]
+
+/** ✅ / 已定 / decided marks a decision as settled — stripped from heading residue. */
+const DECIDED_MARK = /✅|已定|已决|decided/gi
+/** （核心） / （core）, fullwidth or half-width parens, marks the section's key decision. */
+const CORE_MARK = /[（(]\s*(?:核心|core)\s*[)）]/i
 
 interface DecisionH3 {
   heading: string
@@ -44,6 +54,7 @@ export function extractDecisions(section: SectionSource): DecisionExtraction {
 
   for (const h3 of splitH3(section.nodes)) {
     const label = labelOf('decision', h3.heading)
+    const headingFacts = parseHeading(h3.headingNode, label)
     const bodyText = compact(h3.nodes.map((node) => textOf(node)).join(' '))
     const pointText = compact(`${h3.heading} ${bodyText}`)
     const id = label ?? `decision:${section.order}:root:${counter}`
@@ -74,6 +85,11 @@ export function extractDecisions(section: SectionSource): DecisionExtraction {
       status: isDecided(h3.heading) ? 'decided' : 'pending',
     }
     if (label) card.label = label
+    if (headingFacts.pick) card.pick = headingFacts.pick
+    if (headingFacts.question) card.question = headingFacts.question
+    if (headingFacts.core) card.core = true
+    if (segments.cost) card.cost = segments.cost
+    if (segments.facts) card.facts = segments.facts
     cards.push(card)
   }
 
@@ -94,10 +110,45 @@ function splitH3(nodes: Nodes[]): DecisionH3[] {
   return groups
 }
 
+interface HeadingFacts {
+  pick: string | undefined
+  question: string | undefined
+  core: boolean
+}
+
+/**
+ * Structural facts in a decision H3 heading: the bold selection phrase (`pick`),
+ * the （核心）/（core） tag (`core`), and the residual question text once label /
+ * pick / core / decided markers are stripped. Degrades to empty facts when the
+ * heading is a plain sentence — never throws.
+ */
+function parseHeading(headingNode: Nodes, label: string | undefined): HeadingFacts {
+  const flat = compact(textOf(headingNode))
+  const strong =
+    'children' in headingNode
+      ? (headingNode as Heading).children.find((child) => child.type === 'strong')
+      : undefined
+  const pick = strong ? compact(textOf(strong)) || undefined : undefined
+  const core = CORE_MARK.test(flat)
+
+  let residue = flat
+  if (label) residue = residue.replace(new RegExp(`^${label}\\b`), '')
+  residue = residue.replace(CORE_MARK, '')
+  if (pick) residue = residue.split(pick).join('')
+  residue = residue.replace(DECIDED_MARK, '')
+  // Drop leftover separators / empty brackets, then compact.
+  const question =
+    compact(residue.replace(/[：:—\-·|]/g, ' ').replace(/[（(]\s*[)）]/g, ' ')) || undefined
+
+  return { pick, question, core }
+}
+
 interface Segments {
   chosen: string
   rationale: string
   rejected: Array<{ option: string; reason: string }>
+  cost: string
+  facts: string
 }
 
 function parseSegments(nodes: Nodes[]): Segments {
@@ -105,10 +156,20 @@ function parseSegments(nodes: Nodes[]): Segments {
   const chosen: string[] = []
   const rationale: string[] = []
   const body: string[] = []
+  const cost: string[] = []
+  const facts: string[] = []
   const rejected: Array<{ option: string; reason: string }> = []
 
   const sink = (kind: SegmentKind): string[] =>
-    kind === 'chosen' ? chosen : kind === 'rationale' ? rationale : body
+    kind === 'chosen'
+      ? chosen
+      : kind === 'rationale'
+        ? rationale
+        : kind === 'cost'
+          ? cost
+          : kind === 'facts'
+            ? facts
+            : body
 
   for (const node of nodes) {
     if (node.type === 'paragraph') {
@@ -139,7 +200,13 @@ function parseSegments(nodes: Nodes[]): Segments {
 
   let chosenText = chosen.join('\n').trim()
   if (!chosenText) chosenText = body.join('\n').trim()
-  return { chosen: chosenText, rationale: rationale.join('\n').trim(), rejected }
+  return {
+    chosen: chosenText,
+    rationale: rationale.join('\n').trim(),
+    rejected,
+    cost: cost.join('\n').trim(),
+    facts: facts.join('\n').trim(),
+  }
 }
 
 function detectLead(text: string): { segment: SegmentKind; rest: string } | undefined {
