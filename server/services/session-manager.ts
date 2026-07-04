@@ -9,7 +9,9 @@ import { createSidecarStore } from '../adapters/store-sidecar.js'
 import { createExecaRunner } from '../adapters/llm-execa.js'
 import { validateStateTransition } from '../../core/annotation-state.js'
 import { rewriteItems } from '../../core/rewrite.js'
+import { extract } from '../../core/extract/index.js'
 import type { AiConfig, RewriteItem, RewriteResultEntry } from '../../types/api.js'
+import type { ExtractResult } from '../../types/domain.js'
 import type { PlanItemState } from '../../types/plan.js'
 import { documentStatePath, exportPathFor } from '../paths.js'
 
@@ -168,6 +170,15 @@ export class SessionManager {
     const result = await this.docSource.read(session.filePath)
     if (!result.ok) throw new Error(result.error.message)
     return { path: result.value.docId, content: result.value.content }
+  }
+
+  /** Extract the current document into an ExtractResult. Recomputed each call — never persisted. */
+  async extract(id: string): Promise<ExtractResult> {
+    const session = this.getSession(id)
+    this.touch(session)
+    const result = await this.docSource.read(session.filePath)
+    if (!result.ok) throw new Error(result.error.message)
+    return extract(result.value.content)
   }
 
   async saveFile(id: string, content: string): Promise<void> {

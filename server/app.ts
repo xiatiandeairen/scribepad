@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { fileRoute } from './routes/file.js'
 import { annotationsRoute } from './routes/annotations.js'
 import { planStateRoute } from './routes/plan-state.js'
+import { extractRoute } from './routes/extract.js'
 import { rewriteRoute } from './routes/rewrite.js'
 import { reviewNormalizeRoute } from './routes/review-normalize.js'
 import { sessionRoute } from './routes/session.js'
@@ -41,6 +42,7 @@ export function createApp(ctx: AppContext) {
   app.route('/api', fileRoute(ctx))
   app.route('/api', annotationsRoute(ctx))
   app.route('/api', planStateRoute(ctx))
+  app.route('/api', extractRoute(ctx))
   app.route('/api', rewriteRoute(ctx))
   app.route('/api', reviewNormalizeRoute(ctx))
   app.route('/api', aiRoute(ctx))

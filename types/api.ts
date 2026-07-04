@@ -5,6 +5,7 @@
 
 import type { Annotation } from './annotation.js'
 import type { PlanItemState } from './plan.js'
+import type { ExtractResult } from './domain.js'
 
 // GET /api/file
 export interface FileResponse {
@@ -39,6 +40,11 @@ export interface PlanStateResponse {
 // POST /api/plan-state
 export interface PlanStateRequest {
   planState: PlanItemState[]
+}
+
+// GET /api/extract — recomputed each call, never persisted.
+export interface ExtractResponse {
+  result: ExtractResult
 }
 
 // POST /api/rewrite
