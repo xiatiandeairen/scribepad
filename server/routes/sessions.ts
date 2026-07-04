@@ -229,6 +229,7 @@ export function sessionsRoute(ctx: AppContext) {
         extract,
         source: content,
         resolveLlm: () => ctx.sessionManager.getLlmRunner(),
+        applySelectionOp: (op, quote) => ctx.sessionManager.applySelectionOp(sessionId, op, quote),
         signal: controller.signal,
       })) {
         if (controller.signal.aborted) break

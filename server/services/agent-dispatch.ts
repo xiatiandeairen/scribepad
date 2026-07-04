@@ -6,11 +6,12 @@
  * routes/sessions.ts is a thin wrapper that pumps these events onto the wire.
  *
  * Dispatch is a direct switch on the request shape (no Strategy factory for four
- * cases). Two families:
+ * cases). Three families:
  *   - command (ai-review / ai-refs): deterministic, reuses core/verify — no LLM.
  *   - chat / selection-op:explain: one LLM round via core/agent's chat task.
- * selection-op dcard|risk|open (P6) and analyze-notes (v2) return an honest
- * not-implemented `final` rather than a fabricated result.
+ *   - selection-op dcard|risk|open (P6): a real, persisted document edit run via
+ *     the injected `applySelectionOp`; the terminal `final` carries `mutated`.
+ * analyze-notes (v2) returns an honest not-implemented `final`.
  */
 import type { AgentAction, AgentEvent, AgentRequest } from '../../types/api.js'
 import type { ExtractResult } from '../../types/domain.js'
@@ -27,6 +28,14 @@ export interface AgentDispatchDeps {
   /** Lazily resolves the LLM runner; only called on chat / explain paths. */
   resolveLlm: () => LlmRunner
   /**
+   * Applies a selection-op (dcard/risk/open) as a real, persisted document edit
+   * and returns the new item's label. Injected by the route so dispatch performs
+   * no IO of its own; only the selection-op branch calls it. Throws on failure
+   * (section missing / LLM / splice conflict) — dispatch turns that into an honest
+   * error `final` and leaves the document unchanged.
+   */
+  applySelectionOp: (op: 'dcard' | 'risk' | 'open', quote: string) => Promise<{ newLabel: string }>
+  /**
    * Cancellation from the transport (client disconnect). We check it between
    * steps to stop emitting; the in-flight LLM subprocess itself cannot be killed
    * through the LlmRunner port (no signal in LlmRunRequest), so a running call
@@ -41,6 +50,12 @@ const SELECTION_OP_TITLE: Record<'dcard' | 'risk' | 'open', string> = {
   dcard: '转决策卡',
   risk: '提为风险',
   open: '提为待确认',
+}
+
+const SELECTION_OP_PROGRESS: Record<'dcard' | 'risk' | 'open', string> = {
+  dcard: '正在整理为决策卡草稿…',
+  risk: '正在整理为风险条目…',
+  open: '正在整理为待确认条目…',
 }
 
 /** Dispatch one request into its event stream. */
@@ -63,7 +78,7 @@ export async function* dispatchAgent(
         yield* dispatchChat({ text: EXPLAIN_INSTRUCTION, quote: request.quote }, deps)
         return
       }
-      yield finalNote(`选区「${SELECTION_OP_TITLE[request.op]}」为 P6 阶段功能，本期尚未实现。`)
+      yield* dispatchSelectionOp(request.op, request.quote, deps)
       return
     case 'analyze-notes':
       yield finalNote('批注批量分析（analyze-notes）计划在 v2 实现，本期尚未提供。')
@@ -120,6 +135,51 @@ async function* dispatchChat(
     return
   }
   yield { type: 'final', paragraphs: result.value.paragraphs, actions: result.value.actions }
+}
+
+/**
+ * selection-op dcard|risk|open — a real, persisted document edit (P6). The write
+ * (read → LLM draft → splice → save → re-extract) lives behind the injected
+ * `applySelectionOp`; here we only phase the events. On success the terminal
+ * `final` carries `mutated: true` + an action jumping to the new label; on any
+ * failure it is an honest error `final` with no `mutated` (the doc is untouched).
+ */
+async function* dispatchSelectionOp(
+  op: 'dcard' | 'risk' | 'open',
+  quote: string,
+  deps: AgentDispatchDeps,
+): AsyncGenerator<AgentEvent> {
+  if (deps.signal?.aborted) return
+  yield { type: 'progress', label: SELECTION_OP_PROGRESS[op] }
+  yield { type: 'progress', label: '正在调用 AI…' }
+
+  let newLabel: string
+  try {
+    ;({ newLabel } = await deps.applySelectionOp(op, quote))
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    yield {
+      type: 'final',
+      paragraphs: [`抱歉，「${SELECTION_OP_TITLE[op]}」未能完成（${message}），文档未改动。`],
+      actions: [],
+    }
+    return
+  }
+  if (deps.signal?.aborted) return
+
+  const action: AgentAction = {
+    icon: 'edit',
+    kind: 'canvas',
+    title: SELECTION_OP_TITLE[op],
+    sub: `已插入 ${newLabel}`,
+    pt: newLabel,
+  }
+  yield {
+    type: 'final',
+    paragraphs: [`已将选区${SELECTION_OP_TITLE[op]}，插入 ${newLabel}。文档已更新，请刷新查看。`],
+    actions: [action],
+    mutated: true,
+  }
 }
 
 /**

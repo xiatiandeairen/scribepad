@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   outputPathFor,
   RewriteApplyConflictError,
+  SelectionOpError,
   SessionManager,
 } from '../../server/services/session-manager'
 import { docIdFor, documentStatePath, repoIdFor } from '../../server/paths'
@@ -318,5 +319,81 @@ describe('SessionManager — rewriteApply', () => {
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-apply-'))
     const manager = new SessionManager({ repoRoot: dir })
     await expect(manager.rewriteApply('sess-nonexistent', [])).rejects.toThrow(/Session not found/)
+  })
+})
+
+describe('SessionManager — applySelectionOp', () => {
+  function fakeLlm(payload: unknown): LlmRunner {
+    return { run: async () => ({ ok: true, value: JSON.stringify(payload) }) }
+  }
+
+  async function setupSession(content: string, llm: LlmRunner) {
+    const dir = await mkdtemp(join(tmpdir(), 'scribepad-selop-'))
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
+    const filePath = join(dir, 'plan.md')
+    await writeFile(filePath, content, 'utf8')
+    const manager = new SessionManager({
+      repoRoot: dir,
+      env: { XDG_STATE_HOME: xdg },
+      llmRunner: llm,
+    })
+    const { sessionId } = manager.openSession(filePath)
+    return { manager, sessionId, filePath }
+  }
+
+  it('runs the closed loop for risk: draft → insert → save → re-extract as R6', async () => {
+    const source = readFixture('plan-auth-soc2.md')
+    const { manager, sessionId, filePath } = await setupSession(
+      source,
+      fakeLlm({ risk: '缓存击穿', impact: '延迟升高', mitigation: '单飞兜底' }),
+    )
+
+    const { newLabel, result, content } = await manager.applySelectionOp(
+      sessionId,
+      'risk',
+      '缓存相关风险',
+    )
+
+    expect(newLabel).toBe('R6')
+    // Landed on disk, and the new row is present in the persisted content.
+    const onDisk = await readFile(filePath, 'utf8')
+    expect(onDisk).toBe(content)
+    expect(onDisk).toContain('| R6 |')
+    expect(onDisk).toContain('缓存击穿')
+    // Re-extraction surfaces the new labelled point.
+    expect(result.points.some((p) => p.label === 'R6' && p.kind === 'risk')).toBe(true)
+  })
+
+  it('does not persist when the target section is missing', async () => {
+    // A doc with no 风险 section → locate errors before any write.
+    const source = '# Plan\n\n## 目标\n- **G1** 基础目标：X。\n'
+    const { manager, sessionId, filePath } = await setupSession(
+      source,
+      fakeLlm({ risk: 'x', impact: 'y', mitigation: 'z' }),
+    )
+
+    await expect(manager.applySelectionOp(sessionId, 'risk', 'q')).rejects.toBeInstanceOf(
+      SelectionOpError,
+    )
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(source)
+  })
+
+  it('does not persist when the LLM fails to produce a valid fragment', async () => {
+    const source = readFixture('plan-auth-soc2.md')
+    const badLlm: LlmRunner = { run: async () => ({ ok: true, value: 'not json' }) }
+    const { manager, sessionId, filePath } = await setupSession(source, badLlm)
+
+    await expect(manager.applySelectionOp(sessionId, 'risk', 'q')).rejects.toBeInstanceOf(
+      SelectionOpError,
+    )
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(source)
+  })
+
+  it('throws for an unknown sessionId (→ 404 at the route level)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'scribepad-selop-'))
+    const manager = new SessionManager({ repoRoot: dir })
+    await expect(manager.applySelectionOp('sess-nonexistent', 'risk', 'q')).rejects.toThrow(
+      /Session not found/,
+    )
   })
 })

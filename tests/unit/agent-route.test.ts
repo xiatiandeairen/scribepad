@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Hono } from 'hono'
 import { describe, expect, it } from 'vitest'
 import { sessionsRoute } from '../../server/routes/sessions.js'
@@ -108,5 +110,31 @@ describe('POST /sessions/:id/agent (SSE)', () => {
     const res = await postAgent(app, 'sess-nonexistent', { type: 'command', id: 'ai-refs' })
     expect(res.status).toBe(404)
     expect(res.headers.get('content-type')).toContain('application/json')
+  })
+
+  it('selection-op risk mutates the document and streams a mutated final with pt', async () => {
+    const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+    const source = readFileSync(join(repoRoot, 'tests/fixtures/plan-auth-soc2.md'), 'utf8')
+    const riskLlm: LlmRunner = {
+      async run() {
+        return {
+          ok: true,
+          value: JSON.stringify({ risk: '缓存击穿', impact: '延迟升高', mitigation: '单飞兜底' }),
+        }
+      },
+    }
+    const { app, sessionId } = await setup(source, riskLlm)
+    const res = await postAgent(app, sessionId, {
+      type: 'selection-op',
+      op: 'risk',
+      quote: '缓存风险',
+    })
+    const events = parseSseEvents(await res.text())
+    const final = events.at(-1)!
+    expect(final.type).toBe('final')
+    if (final.type === 'final') {
+      expect(final.mutated).toBe(true)
+      expect(final.actions[0]!.pt).toBe('R6')
+    }
   })
 })

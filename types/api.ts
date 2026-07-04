@@ -200,8 +200,8 @@ export interface DoneSessionResponse {
 // and reads back a stream of AgentEvent (progress* → final). The four request
 // shapes mirror the frontend's agent.send() sources; the server dispatches on
 // `type` (+ `op` / `id`). command / selection-op:explain are wired in P5;
-// selection-op dcard|risk|open land in P6 and analyze-notes in v2 — those return
-// a not-implemented `final` rather than a fabricated result.
+// selection-op dcard|risk|open are real, persisted document edits in P6 (final
+// carries `mutated: true`); analyze-notes stays a v2 not-implemented `final`.
 
 /** One note fed to analyze-notes. Loose by design — the feature is a v2 placeholder. */
 export interface AgentNote {
@@ -232,11 +232,13 @@ export interface AgentAction {
 /**
  * One server-sent event on the agent stream. `progress` is a coarse, honest
  * phase label (assembling context / calling / …), emitted zero or more times;
- * `final` is the single terminal reply and closes the stream.
+ * `final` is the single terminal reply and closes the stream. `mutated` is set
+ * (true, additive) only when the reply changed the document on disk — a P6
+ * selection-op edit — so the frontend knows to refetch the extraction.
  */
 export type AgentEvent =
   | { type: 'progress'; label: string }
-  | { type: 'final'; paragraphs: string[]; actions: AgentAction[] }
+  | { type: 'final'; paragraphs: string[]; actions: AgentAction[]; mutated?: true }
 
 // Generic error
 export interface ErrorResponse {

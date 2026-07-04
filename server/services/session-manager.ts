@@ -13,6 +13,12 @@ import { validateStateTransition } from '../../core/annotation-state.js'
 import { applyRewrites, rewriteItems } from '../../core/rewrite.js'
 import type { EditAt, RewriteApplyError } from '../../core/rewrite.js'
 import { extract } from '../../core/extract/index.js'
+import { locateSectionInsertAt, nextLabel, SELECTION_OP_KIND } from '../../core/section-insert.js'
+import {
+  renderSelectionFragment,
+  runSelectionEditTask,
+} from '../../core/agent/tasks/selectionEdit.js'
+import type { SelectionOp } from '../../core/agent/tasks/selectionEdit.js'
 import type {
   AiConfig,
   RewriteApplyItem,
@@ -37,6 +43,29 @@ export class RewriteApplyConflictError extends Error {
     this.name = 'RewriteApplyConflictError'
     this.kind = error.kind
   }
+}
+
+/**
+ * A selection-op (P6) could not be applied for a reason other than the splice
+ * guard: the target section is missing/empty, or the LLM failed to produce the
+ * fragment. Distinct from RewriteApplyConflictError (splice drift/overlap) so the
+ * dispatcher can tell "nothing to append to" from "document changed under us".
+ */
+export class SelectionOpError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SelectionOpError'
+  }
+}
+
+/** Result of a selection-op closed loop — the new label plus the mutated document. */
+export interface SelectionOpResult {
+  /** The label assigned to the newly inserted item (e.g. D5 / R6 / Q6). */
+  newLabel: string
+  /** Fresh extraction of the mutated document. */
+  result: ExtractResult
+  /** The full document content after the insert. */
+  content: string
 }
 
 export interface ClientState {
@@ -317,6 +346,56 @@ export class SessionManager {
     await this.writeDoc(session.filePath, applied.value)
     session.dirty = true
     return { result: extract(applied.value), content: applied.value }
+  }
+
+  /**
+   * Selection-op closed loop (P6): read the current doc → extract → pick the next
+   * label + insertion offset for the op's target section → LLM drafts the item's
+   * content → render + splice via applyRewrites (an insertion-shaped edit) → save
+   * → re-extract. Reuses P4's applyRewrites; never re-implements the splice.
+   *
+   * Reads the current document itself so a stale source can't clobber concurrent
+   * edits. Nothing is written unless the whole pipeline succeeds: a missing target
+   * section or an LLM failure throws SelectionOpError, a splice guard rejection
+   * throws RewriteApplyConflictError — in every failure the document is untouched.
+   */
+  async applySelectionOp(id: string, op: SelectionOp, quote: string): Promise<SelectionOpResult> {
+    const session = this.getSession(id)
+    this.touch(session)
+    const readResult = await this.docSource.read(session.filePath)
+    if (!readResult.ok) throw new Error(readResult.error.message)
+    const doc = readResult.value.content
+    const before = extract(doc)
+
+    const kind = SELECTION_OP_KIND[op]
+    const located = locateSectionInsertAt(before, kind)
+    if (!located.ok) throw new SelectionOpError(located.error.message)
+    const label = nextLabel(before, kind)
+
+    const drafted = await runSelectionEditTask(
+      op,
+      { quote, extract: before, label },
+      this.resolveLlm(),
+    )
+    if (!drafted.ok) {
+      throw new SelectionOpError(
+        `selection-op ${op} draft failed (${drafted.error.kind}): ${drafted.error.message}`,
+      )
+    }
+
+    const fragment = renderSelectionFragment(drafted.value, label)
+    const edit: EditAt = {
+      srcStart: located.value,
+      srcEnd: located.value,
+      selection: '',
+      rewritten: fragment,
+    }
+    const applied = applyRewrites(doc, [edit])
+    if (!applied.ok) throw new RewriteApplyConflictError(applied.error)
+
+    await this.writeDoc(session.filePath, applied.value)
+    session.dirty = true
+    return { newLabel: label, result: extract(applied.value), content: applied.value }
   }
 
   async done(id: string, content?: string): Promise<DoneResult> {

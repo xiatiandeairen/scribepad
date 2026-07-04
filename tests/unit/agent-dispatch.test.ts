@@ -56,6 +56,9 @@ function makeDeps(doc: string, overrides: Partial<AgentDispatchDeps> = {}): Agen
     extract: extract(doc),
     source: doc,
     resolveLlm: () => throwingLlm,
+    applySelectionOp: async () => {
+      throw new Error('applySelectionOp must not be called on this path')
+    },
     ...overrides,
   }
 }
@@ -186,17 +189,48 @@ describe('dispatchAgent — chat / explain (LLM)', () => {
   })
 })
 
-describe('dispatchAgent — not-implemented placeholders', () => {
-  it('selection-op dcard|risk|open return an honest P6 placeholder (no LLM)', async () => {
-    for (const op of ['dcard', 'risk', 'open'] as const) {
-      const events = await collect({ type: 'selection-op', op, quote: 'x' }, makeDeps(CLEAN_DOC))
-      expect(events).toHaveLength(1)
-      const final = events[0]!
+describe('dispatchAgent — selection-op real edits (P6)', () => {
+  it('dcard|risk|open run the real edit flow: progress* → mutated final with pt', async () => {
+    for (const [op, label] of [
+      ['dcard', 'D4'],
+      ['risk', 'R6'],
+      ['open', 'Q6'],
+    ] as const) {
+      const applySelectionOp = async () => ({ newLabel: label })
+      const events = await collect(
+        { type: 'selection-op', op, quote: 'x' },
+        makeDeps(CLEAN_DOC, { applySelectionOp }),
+      )
+      expect(events.filter((e) => e.type === 'progress').length).toBeGreaterThanOrEqual(1)
+      const final = events.at(-1)!
       expect(final.type).toBe('final')
-      if (final.type === 'final') expect(final.paragraphs[0]).toContain('P6')
+      if (final.type === 'final') {
+        expect(final.mutated).toBe(true)
+        expect(final.actions[0]!.pt).toBe(label)
+        expect(final.paragraphs[0]).toContain(label)
+      }
     }
   })
 
+  it('yields an honest error final (no mutated) when the edit fails', async () => {
+    const applySelectionOp = async () => {
+      throw new Error('no anchored decision point to append after')
+    }
+    const events = await collect(
+      { type: 'selection-op', op: 'dcard', quote: 'x' },
+      makeDeps(CLEAN_DOC, { applySelectionOp }),
+    )
+    const final = events.at(-1)!
+    expect(final.type).toBe('final')
+    if (final.type === 'final') {
+      expect(final.mutated).toBeUndefined()
+      expect(final.paragraphs[0]).toContain('未改动')
+      expect(final.actions).toEqual([])
+    }
+  })
+})
+
+describe('dispatchAgent — not-implemented placeholders', () => {
   it('analyze-notes returns a v2 placeholder (no LLM)', async () => {
     const events = await collect({ type: 'analyze-notes', notes: [] }, makeDeps(CLEAN_DOC))
     expect(events).toHaveLength(1)
