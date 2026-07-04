@@ -7,6 +7,7 @@ import type {
   DisconnectSessionRequest,
   DoneSessionResponse,
   ErrorResponse,
+  ExtractResponse,
   FileResponse,
   HeartbeatSessionRequest,
   OpenSessionRequest,
@@ -18,6 +19,8 @@ import type {
   RewriteResponse,
   SaveRequest,
   SaveResponse,
+  SignoffsRequest,
+  SignoffsResponse,
 } from '../../types/api.js'
 import {
   normalizeReviewPlanRequest,
@@ -102,6 +105,29 @@ export function sessionsRoute(ctx: AppContext) {
     const req = (await c.req.json()) as AnnotationsRequest
     await ctx.sessionManager.writeAnnotations(c.req.param('sessionId'), req.annotations)
     return c.json({ ok: true })
+  })
+
+  app.get('/sessions/:sessionId/signoffs', async (c) => {
+    const signoffs = await ctx.sessionManager.readSignoffs(c.req.param('sessionId'))
+    const body: SignoffsResponse = { signoffs }
+    return c.json(body)
+  })
+
+  app.post('/sessions/:sessionId/signoffs', async (c) => {
+    const req = (await c.req.json()) as SignoffsRequest
+    await ctx.sessionManager.writeSignoffs(c.req.param('sessionId'), req.signoffs)
+    return c.json({ ok: true })
+  })
+
+  app.get('/sessions/:sessionId/extract', async (c) => {
+    try {
+      const result = await ctx.sessionManager.extract(c.req.param('sessionId'))
+      const body: ExtractResponse = { result }
+      return c.json(body)
+    } catch (e) {
+      const err: ErrorResponse = { error: String((e as Error).message ?? e) }
+      return c.json(err, 404)
+    }
   })
 
   app.get('/sessions/:sessionId/plan-state', async (c) => {

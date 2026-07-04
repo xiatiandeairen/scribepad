@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import type { Annotation } from '../../types/annotation.js'
 import type { SessionResponse } from '../../types/api.js'
+import type { Signoff } from '../../types/domain.js'
 import type { DocSource, LlmRunner, ReviewState, ReviewStore } from '../../types/ports.js'
 import { createFsDocSource } from '../adapters/docsource-fs.js'
 import { createPlanStateShim, createSidecarStore } from '../adapters/store-sidecar.js'
@@ -215,6 +216,20 @@ export class SessionManager {
       }
     }
     await this.saveState(session.filePath, { ...state, annotations })
+    session.dirty = true
+    this.touch(session)
+  }
+
+  async readSignoffs(id: string): Promise<Signoff[]> {
+    const session = this.getSession(id)
+    this.touch(session)
+    return (await this.loadState(session.filePath)).signoffs
+  }
+
+  async writeSignoffs(id: string, signoffs: Signoff[]): Promise<void> {
+    const session = this.getSession(id)
+    const state = await this.loadState(session.filePath)
+    await this.saveState(session.filePath, { ...state, signoffs })
     session.dirty = true
     this.touch(session)
   }
