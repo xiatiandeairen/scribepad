@@ -124,7 +124,9 @@ function HowSection({ sec, points }){
     {sec.lead&&<p><T s={sec.lead}/></p>}
     <div className="steps">
       {points.map(s=>(
-        <div key={s.label} className="step" data-pt={s.label} data-screen-label={`做法 §4.${s.ui.num}`}>
+        /* 做法步骤无后端 label（label 恒 undefined）→ key 用结构 id（唯一稳定），
+           否则整列表 key=undefined 触发 React 重复 key 警告。 */
+        <div key={s.id} className="step" data-pt={s.label} data-screen-label={`做法 §4.${s.ui.num}`}>
           <div className="rail"><span className="num">{s.ui.num}</span><span className="line"></span></div>
           <div className="sc" style={{minWidth:0,flex:1}}>
             <div className="sh">{s.title}</div>
