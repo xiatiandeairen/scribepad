@@ -67,8 +67,9 @@ describe('extract(plan-auth-soc2.md) — the compliant benchmark', () => {
     // become a V-owned label — otherwise two items collide on the same id.
     const verification = soc2.points.filter((point) => point.kind === 'verification')
     expect(verification.every((point) => point.label === undefined)).toBe(true)
-    expect(verification.filter((point) => point.refs.some((ref) => /^[GD]/.test(ref)))
-      .length).toBeGreaterThanOrEqual(7)
+    expect(
+      verification.filter((point) => point.refs.some((ref) => /^[GD]/.test(ref))).length,
+    ).toBeGreaterThanOrEqual(7)
 
     // byLabel navigates a decision label to its decision point.
     expect(byLabel(soc2)['D2']?.kind).toBe('decision')

@@ -61,7 +61,7 @@ export const decisionCardSchema = z.object({
     z.object({
       option: z.string(),
       reason: z.string(),
-    })
+    }),
   ),
   status: z.enum(['decided', 'pending']),
 }) satisfies z.ZodType<DecisionCard>

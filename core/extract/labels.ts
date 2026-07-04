@@ -2,27 +2,35 @@
  * Grounding primitives: label recognition + cross-reference scanning +
  * navigation over the extracted reference graph.
  *
- * Label syntax is `^[GSDBVRPQ]\d+$`; each prefix maps to exactly one InfoKind.
- * A point only *owns* a label when the prefix matches its section kind — a
+ * Label syntax is `^[GDRPQB]\d+$` — the five stable roles G/D/R/P/Q plus B,
+ * which labels a *verified bug* living in the goal section (so the goal section
+ * owns two prefixes, G for gates and B for bugs, both mapping to `goal`). A
+ * point only *owns* a label when the prefix matches its section kind — a
  * `**G2**` prefix inside a verification item is a reference to goal G2, not a
- * new V-label (this is the REF-03 prefix/kind rule expressed at extraction
- * time, and it stops two verification items from colliding on the same id).
+ * label that item owns (this is the REF-03 prefix/kind rule expressed at
+ * extraction time, and it stops two verification items colliding on one id).
+ * Step / verification / section nav labels (S / A / §) are frontend pseudo-
+ * labels derived from ordinals, not backend labels — hence absent here.
  */
 import type { ExtractedItem, ExtractResult, InfoKind } from '../../types/domain.js'
 
-const PREFIX_KIND: Record<string, InfoKind> = {
+/**
+ * The single source of truth for label prefix → kind. Both extraction (label
+ * ownership) and verification (REF-03 prefix/kind check) read this — keep it
+ * one map so the two never drift.
+ */
+export const PREFIX_KIND: Record<string, InfoKind> = {
   G: 'goal',
-  S: 'scope',
+  B: 'goal',
   D: 'decision',
-  B: 'behavior',
-  V: 'verification',
   R: 'risk',
   P: 'precondition',
   Q: 'open-question',
 }
 
-const LABEL_LEAD = /^([GSDBVRPQ]\d+)\b/
-const LABEL_TOKEN = /\b[GSDBVRPQ]\d+\b/g
+const LABEL_LEAD = /^([GDRPQB]\d+)\b/
+/** Global; only ever consumed via `String.matchAll`, which copies it (no shared lastIndex). */
+export const LABEL_TOKEN = /\b[GDRPQB]\d+\b/g
 
 /** True when a label's prefix maps to the given section kind. */
 export function prefixMatchesKind(label: string, kind: InfoKind): boolean {

@@ -92,8 +92,13 @@ function assertInvariants(problem: Problem): Problem {
   if (problem.mechanism === 'ai' && problem.severity === 'blocker') {
     throw new Error(`verify invariant: AI finding ${problem.ruleId} cannot be a blocker`)
   }
-  if (problem.severity === 'blocker' && (problem.mechanism !== 'rule' || problem.confidence !== 1)) {
-    throw new Error(`verify invariant: blocker ${problem.ruleId} requires rule mechanism ∧ conf 1.0`)
+  if (
+    problem.severity === 'blocker' &&
+    (problem.mechanism !== 'rule' || problem.confidence !== 1)
+  ) {
+    throw new Error(
+      `verify invariant: blocker ${problem.ruleId} requires rule mechanism ∧ conf 1.0`,
+    )
   }
   if (problem.confidence < 0.5 && problem.severity !== 'suppressed') {
     throw new Error(`verify invariant: conf<0.5 ${problem.ruleId} must be suppressed`)

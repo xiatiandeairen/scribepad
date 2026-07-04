@@ -115,7 +115,10 @@ describe('createSidecarStore — G5: stored file preserved across a store round-
     // store owns, planState the legacy shim owns, and a retired confirmStates the
     // type no longer knows about. None may be dropped on the next store save
     // (spread-existing invariant, G5).
-    await store.save(docPath, { annotations: [makeAnnotation('a-1')], signoffs: [makeSignoff('g1')] })
+    await store.save(docPath, {
+      annotations: [makeAnnotation('a-1')],
+      signoffs: [makeSignoff('g1')],
+    })
     const p = documentStatePath(repoRoot, docPath, env)
     const onDisk = JSON.parse(await readFile(p, 'utf8')) as Record<string, unknown>
     const legacyPlanState = [makePlanItem('scope:1')]
@@ -154,7 +157,10 @@ describe('createPlanStateShim — legacy plan-state accessor', () => {
     const store = createSidecarStore({ repoRoot, env })
     const shim = createPlanStateShim({ repoRoot, env })
 
-    await store.save(docPath, { annotations: [makeAnnotation('a-1')], signoffs: [makeSignoff('g1')] })
+    await store.save(docPath, {
+      annotations: [makeAnnotation('a-1')],
+      signoffs: [makeSignoff('g1')],
+    })
     await shim.savePlanState(docPath, [makePlanItem('scope:1')])
 
     // Store still sees its own fields; the shim write did not touch them.

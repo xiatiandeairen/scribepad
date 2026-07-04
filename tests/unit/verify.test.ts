@@ -69,7 +69,14 @@ describe('deriveSeverity — the Table 2 matrix', () => {
   const rule = (ruleId: string, layer: Problem['layer'], aspect: Problem['aspect']) =>
     deriveSeverity({ ...base, ruleId, layer, aspect, mechanism: 'rule', confidence: 1 })
   const ai = (confidence: number) =>
-    deriveSeverity({ ...base, ruleId: 'QLT-01', layer: 'L2', aspect: 'substance', mechanism: 'ai', confidence })
+    deriveSeverity({
+      ...base,
+      ruleId: 'QLT-01',
+      layer: 'L2',
+      aspect: 'substance',
+      mechanism: 'ai',
+      confidence,
+    })
 
   it('rule · required presence → blocker; soft presence → warning', () => {
     expect(rule('STR-01', 'L1', 'presence')).toBe('blocker')

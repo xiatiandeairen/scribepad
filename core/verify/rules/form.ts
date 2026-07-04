@@ -169,9 +169,7 @@ function hygieneResidue(ctx: VerifyContext, findings: Finding[]): void {
       confidence: 1,
       pointId: point.id,
       ...(point.label ? { label: point.label } : {}),
-      ...(point.anchor
-        ? { span: { start: point.anchor.srcStart, end: point.anchor.srcEnd } }
-        : {}),
+      ...(point.anchor ? { span: { start: point.anchor.srcStart, end: point.anchor.srcEnd } } : {}),
       quote: point.text.slice(0, 120),
       message: '占位/生成残留（改写标记连续重复或 lorem），非待定内容。',
       fixHint: `Delete the residue and restore the intended content; register anything unknown as a Q entry. ${NO_FABRICATION}`,

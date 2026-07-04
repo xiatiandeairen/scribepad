@@ -8,26 +8,15 @@
  *
  * The semantic half (QLT-*) is the AI mechanism and is not run here.
  */
+import { LABEL_TOKEN, PREFIX_KIND } from '../../extract/labels.js'
 import type { VerifyContext } from './context.js'
 import type { Finding } from './types.js'
 
 const NO_FABRICATION =
   'Do not fabricate facts — register any unknown value as a Q entry with ⚠ TBD + an owner placeholder.'
 
-const LABEL_TOKEN = /\b[GSDBVRPQ]\d+\b/g
 const POSITION_REF = /第\s*\d+\s*[条节]/
 const TODO_MARK = /\b(?:TODO|TBD)\b|待定|待确认/gi
-
-const PREFIX_KIND: Record<string, string> = {
-  G: 'goal',
-  S: 'scope',
-  D: 'decision',
-  B: 'behavior',
-  V: 'verification',
-  R: 'risk',
-  P: 'precondition',
-  Q: 'open-question',
-}
 
 /** All label tokens in a text (used for rationale / anchor coverage checks). */
 function labelsIn(text: string): string[] {
@@ -156,9 +145,7 @@ function gaps(ctx: VerifyContext, findings: Finding[]): void {
       mechanism: 'rule',
       confidence: 1,
       pointId: point.id,
-      ...(point.anchor
-        ? { span: { start: point.anchor.srcStart, end: point.anchor.srcEnd } }
-        : {}),
+      ...(point.anchor ? { span: { start: point.anchor.srcStart, end: point.anchor.srcEnd } } : {}),
       message: '验收条目未锚定任何 G/D 约束，不知在验证什么。',
       fixHint: `Anchor the item to the G/D label it verifies. ${NO_FABRICATION}`,
       autoLocatable: point.anchor !== undefined,
@@ -195,9 +182,7 @@ function gaps(ctx: VerifyContext, findings: Finding[]): void {
       confidence: 1,
       pointId: point.id,
       ...(point.label ? { label: point.label } : {}),
-      ...(point.anchor
-        ? { span: { start: point.anchor.srcStart, end: point.anchor.srcEnd } }
-        : {}),
+      ...(point.anchor ? { span: { start: point.anchor.srcStart, end: point.anchor.srcEnd } } : {}),
       message: '位置引用（第 N 条）脆弱，插入条目即错位，建议改标签。',
       fixHint: `Replace positional references with the target's stable label. ${NO_FABRICATION}`,
       autoLocatable: point.anchor !== undefined,
