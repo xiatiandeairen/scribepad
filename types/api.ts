@@ -42,7 +42,7 @@ export interface PlanStateRequest {
   planState: PlanItemState[]
 }
 
-// GET /api/extract — recomputed each call, never persisted.
+// GET /api/sessions/:sessionId/extract — recomputed each call, never persisted.
 export interface ExtractResponse {
   result: ExtractResult
 }
@@ -159,12 +159,6 @@ export interface SessionResponse {
 // POST /api/session/close
 export interface CloseSessionRequest {
   exportAgentContext: boolean
-}
-
-// POST /api/session/export
-export interface ExportSessionResponse {
-  agentContextPath: string
-  exportedAt: string
 }
 
 export interface OpenSessionRequest {

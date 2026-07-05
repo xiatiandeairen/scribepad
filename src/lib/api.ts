@@ -17,7 +17,6 @@ import type {
   ConnectSessionResponse,
   DoneSessionResponse,
   ErrorResponse,
-  ExportSessionResponse,
   FileResponse,
   HeartbeatSessionRequest,
   PlanStateResponse,
@@ -158,11 +157,6 @@ export async function getSession(): Promise<SessionResponse> {
 export async function heartbeatSession(): Promise<SessionResponse> {
   const res = await fetch('/api/session/heartbeat', { method: 'POST' })
   return parseOrThrow<SessionResponse>(res)
-}
-
-export async function exportSession(): Promise<ExportSessionResponse> {
-  const res = await fetch('/api/session/export', { method: 'POST' })
-  return parseOrThrow<ExportSessionResponse>(res)
 }
 
 export async function closeSession(exportAgentContext: boolean): Promise<{ ok: true }> {

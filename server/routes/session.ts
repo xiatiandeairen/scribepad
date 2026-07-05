@@ -1,5 +1,5 @@
 /**
- * routes/session — GET/heartbeat/export/close for one-shot CLI sessions.
+ * routes/session — GET/heartbeat/close for one-shot CLI sessions.
  */
 import { Hono } from 'hono'
 import type { AppContext } from '../app.js'
@@ -25,12 +25,6 @@ export function sessionRoute(ctx: AppContext) {
     } catch {
       return c.json({ error: 'session is not enabled' }, 404)
     }
-  })
-
-  app.post('/session/export', async (c) => {
-    const session = ctx.sessionManager.getFallbackSession()
-    const result = await ctx.sessionManager.done(session.id)
-    return c.json({ agentContextPath: result.outputPath, exportedAt: new Date().toISOString() })
   })
 
   app.post('/session/close', async (c) => {
