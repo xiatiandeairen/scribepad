@@ -4,7 +4,6 @@
  */
 
 import type { Annotation } from './annotation.js'
-import type { PlanItemState } from './plan.js'
 import type { ExtractResult, Signoff } from './domain.js'
 
 // GET /api/file
@@ -30,16 +29,6 @@ export interface AnnotationsResponse {
 // POST /api/annotations
 export interface AnnotationsRequest {
   annotations: Annotation[]
-}
-
-// GET /api/plan-state
-export interface PlanStateResponse {
-  planState: PlanItemState[]
-}
-
-// POST /api/plan-state
-export interface PlanStateRequest {
-  planState: PlanItemState[]
 }
 
 // GET /api/sessions/:sessionId/extract — recomputed each call, never persisted.
@@ -95,15 +84,6 @@ export interface RewriteApplyRequest {
 
 export interface RewriteApplyResponse {
   result: ExtractResult
-  content: string
-}
-
-// POST /api/review-normalize
-export interface ReviewNormalizeRequest {
-  fullDoc: string
-}
-
-export interface ReviewNormalizeResponse {
   content: string
 }
 

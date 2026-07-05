@@ -9,11 +9,10 @@ import { basename, dirname, join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { createPlanStateShim, createSidecarStore } from '../../server/adapters/store-sidecar.js'
+import { createSidecarStore } from '../../server/adapters/store-sidecar.js'
 import { documentStatePath } from '../../server/paths.js'
 import type { Annotation } from '../../types/annotation.js'
 import type { Signoff } from '../../types/domain.js'
-import type { PlanItemState } from '../../types/plan.js'
 import type { ReviewState } from '../../types/ports.js'
 
 async function tempDir(): Promise<string> {
@@ -40,7 +39,9 @@ function makeAnnotation(id: string): Annotation {
   }
 }
 
-function makePlanItem(id: string): PlanItemState {
+// A retired plan-state record, kept only to seed the G5 byte-preservation test:
+// after shim removal `planState` is an unknown field the store must not drop.
+function makeRetiredPlanItem(id: string): Record<string, unknown> {
   return { id, status: 'locked', textHash: 'abc123', updatedAt: '2026-01-01' }
 }
 
@@ -121,7 +122,7 @@ describe('createSidecarStore — G5: stored file preserved across a store round-
     })
     const p = documentStatePath(repoRoot, docPath, env)
     const onDisk = JSON.parse(await readFile(p, 'utf8')) as Record<string, unknown>
-    const legacyPlanState = [makePlanItem('scope:1')]
+    const legacyPlanState = [makeRetiredPlanItem('scope:1')]
     const legacyConfirmStates = [
       { itemId: 'item-1', status: 'confirmed', confidence: 0.42, textHash: 'h', updatedAt: 'x' },
     ]
@@ -139,40 +140,6 @@ describe('createSidecarStore — G5: stored file preserved across a store round-
     expect((after.annotations as Annotation[]).map((a) => a.id)).toEqual(['a-2'])
     expect(after.planState).toEqual(legacyPlanState)
     expect(after.confirmStates).toEqual(legacyConfirmStates)
-  })
-})
-
-describe('createPlanStateShim — legacy plan-state accessor', () => {
-  it('round-trips planState against the sidecar file', async () => {
-    const { repoRoot, env, docPath } = await setup()
-    const shim = createPlanStateShim({ repoRoot, env })
-
-    expect(await shim.loadPlanState(docPath)).toEqual([])
-    await shim.savePlanState(docPath, [makePlanItem('scope:1')])
-    expect((await shim.loadPlanState(docPath)).map((p) => p.id)).toEqual(['scope:1'])
-  })
-
-  it('does not clobber store-owned annotations / signoffs, and vice versa', async () => {
-    const { repoRoot, env, docPath } = await setup()
-    const store = createSidecarStore({ repoRoot, env })
-    const shim = createPlanStateShim({ repoRoot, env })
-
-    await store.save(docPath, {
-      annotations: [makeAnnotation('a-1')],
-      signoffs: [makeSignoff('g1')],
-    })
-    await shim.savePlanState(docPath, [makePlanItem('scope:1')])
-
-    // Store still sees its own fields; the shim write did not touch them.
-    const loaded = await store.load(docPath)
-    expect(loaded.ok).toBe(true)
-    if (!loaded.ok) return
-    expect(loaded.value.annotations.map((a) => a.id)).toEqual(['a-1'])
-    expect(loaded.value.signoffs.map((s) => s.pointId)).toEqual(['g1'])
-
-    // A later store save must not drop the shim-owned planState.
-    await store.save(docPath, { ...loaded.value, annotations: [makeAnnotation('a-2')] })
-    expect((await shim.loadPlanState(docPath)).map((p) => p.id)).toEqual(['scope:1'])
   })
 })
 

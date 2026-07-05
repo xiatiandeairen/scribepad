@@ -14,9 +14,6 @@ import type {
   HeartbeatSessionRequest,
   OpenSessionRequest,
   OpenSessionResponse,
-  PlanStateRequest,
-  PlanStateResponse,
-  ReviewNormalizeRequest,
   RewriteApplyRequest,
   RewriteApplyResponse,
   RewriteRequest,
@@ -26,10 +23,6 @@ import type {
   SignoffsRequest,
   SignoffsResponse,
 } from '../../types/api.js'
-import {
-  normalizeReviewPlanRequest,
-  ReviewNormalizeInputError,
-} from '../services/review-normalize.js'
 import { dispatchAgent } from '../services/agent-dispatch.js'
 import { RewriteApplyConflictError } from '../services/session-manager.js'
 
@@ -136,18 +129,6 @@ export function sessionsRoute(ctx: AppContext) {
     }
   })
 
-  app.get('/sessions/:sessionId/plan-state', async (c) => {
-    const planState = await ctx.sessionManager.readPlanState(c.req.param('sessionId'))
-    const body: PlanStateResponse = { planState }
-    return c.json(body)
-  })
-
-  app.post('/sessions/:sessionId/plan-state', async (c) => {
-    const req = (await c.req.json()) as PlanStateRequest
-    await ctx.sessionManager.writePlanState(c.req.param('sessionId'), req.planState)
-    return c.json({ ok: true })
-  })
-
   app.post('/sessions/:sessionId/rewrite', async (c) => {
     const req = (await c.req.json()) as RewriteRequest
     if (!Array.isArray(req.items) || req.items.length === 0) {
@@ -190,17 +171,6 @@ export function sessionsRoute(ctx: AppContext) {
       const message = String((e as Error).message ?? e)
       const err: ErrorResponse = { error: message }
       return c.json(err, /Session not found/.test(message) ? 404 : 500)
-    }
-  })
-
-  app.post('/sessions/:sessionId/review-normalize', async (c) => {
-    const req = (await c.req.json()) as ReviewNormalizeRequest
-    try {
-      ctx.sessionManager.getSession(c.req.param('sessionId'))
-      return c.json(await normalizeReviewPlanRequest(req, ctx.getConfig().ai))
-    } catch (e) {
-      const err: ErrorResponse = { error: String((e as Error).message ?? e) }
-      return c.json(err, e instanceof ReviewNormalizeInputError ? 400 : 500)
     }
   })
 

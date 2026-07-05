@@ -1,4 +1,3 @@
-import type { PlanItemKind, PlanItemState } from './plan.js'
 import type { Signoff } from './domain.js'
 
 /**
@@ -8,6 +7,9 @@ import type { Signoff } from './domain.js'
  * captured at creation time. There is no block/sentence anchor compatibility
  * in this model.
  */
+
+/** The Review section a plan-item annotation target belongs to. */
+export type PlanItemKind = 'goal' | 'scope' | 'behavior' | 'verification' | 'open-question'
 
 export type AnnotationState =
   | 'draft' // 默认,刚创建
@@ -81,9 +83,6 @@ export interface Sidecar {
   docPath?: string
   docRelativePath?: string
   annotations: Annotation[]
-  // Persisted by the legacy plan-state shim while the old frontend is retiring;
-  // optional so files predating it still parse.
-  planState?: PlanItemState[]
   // User sign-offs (the lock model's successor). Optional so older files parse;
   // a missing value is read as an empty list by the store.
   signoffs?: Signoff[]

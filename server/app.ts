@@ -11,9 +11,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileRoute } from './routes/file.js'
 import { annotationsRoute } from './routes/annotations.js'
-import { planStateRoute } from './routes/plan-state.js'
 import { rewriteRoute } from './routes/rewrite.js'
-import { reviewNormalizeRoute } from './routes/review-normalize.js'
 import { sessionRoute } from './routes/session.js'
 import { sessionsRoute } from './routes/sessions.js'
 import { aiRoute } from './routes/ai.js'
@@ -36,9 +34,7 @@ export function createApp(ctx: AppContext) {
   // API routes — must take precedence over the static catch-all below.
   app.route('/api', fileRoute(ctx))
   app.route('/api', annotationsRoute(ctx))
-  app.route('/api', planStateRoute(ctx))
   app.route('/api', rewriteRoute(ctx))
-  app.route('/api', reviewNormalizeRoute(ctx))
   app.route('/api', aiRoute(ctx))
   app.route('/api', sessionRoute(ctx))
   app.route('/api', sessionsRoute(ctx))

@@ -16,7 +16,6 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { Sidecar } from '../../types/annotation.js'
 import type { ReviewState, ReviewStore, StoreError } from '../../types/ports.js'
-import type { PlanItemState } from '../../types/plan.js'
 import type { Result } from '../../types/result.js'
 import { err, ok } from '../../core/result.js'
 import { docRelativePath, documentStatePath, legacySidecarPath } from '../paths.js'
@@ -33,9 +32,9 @@ interface SidecarIo {
 
 /**
  * Shared sidecar file IO: XDG-path resolution, legacy migration, metadata
- * stamping. Both the ReviewStore and the legacy plan-state shim read/write
- * through this one accessor so their saves spread the same on-disk record and
- * never clobber each other's fields.
+ * stamping. The ReviewStore's load/save go through this one accessor so every
+ * save spreads the same on-disk record and preserves fields the port does not
+ * own (round-trip preservation invariant, G5).
  */
 function createSidecarIo(opts: SidecarStoreOptions): SidecarIo {
   const { repoRoot } = opts
@@ -106,11 +105,11 @@ export function createSidecarStore(opts: SidecarStoreOptions): ReviewStore {
 
     async save(docId: string, state: ReviewState): Promise<Result<void, StoreError>> {
       try {
-        // Spread `existing` first so fields this port does not own — the legacy
-        // `planState` written by the shim, plus any unknown / retired field
-        // (e.g. a stale `confirmStates`) — survive byte-for-byte; the known
-        // user-state fields are then written together and never clobber each
-        // other (round-trip preservation invariant, G5).
+        // Spread `existing` first so fields this port does not own — retired
+        // fields left on disk by the old frontend (a legacy `planState`, a stale
+        // `confirmStates`) — survive byte-for-byte; the known user-state fields
+        // are then written together and never clobber each other (round-trip
+        // preservation invariant, G5).
         const existing = await readSidecar(docId)
         const data: Sidecar = {
           ...existing,
@@ -123,38 +122,6 @@ export function createSidecarStore(opts: SidecarStoreOptions): ReviewStore {
       } catch (e) {
         return err({ kind: 'write', message: e instanceof Error ? e.message : String(e) })
       }
-    },
-  }
-}
-
-/**
- * HACK(delete with old-path retirement, see plan-frontend-integration Q3):
- * legacy lock persistence kept behind an explicit shim so the retiring old
- * frontend's lock-after-refresh behavior (G4) is unchanged. `planState` was
- * dropped from the ReviewState port (it has no place in the new model), but the
- * old `/api/plan-state` route still needs to read/write it against the same
- * sidecar file until the old frontend is gone.
- */
-export interface PlanStateShim {
-  loadPlanState(docId: string): Promise<PlanItemState[]>
-  savePlanState(docId: string, planState: PlanItemState[]): Promise<void>
-}
-
-/** Build the legacy plan-state accessor over the same sidecar file as the store. */
-export function createPlanStateShim(opts: SidecarStoreOptions): PlanStateShim {
-  const { readSidecar, writeSidecar } = createSidecarIo(opts)
-
-  return {
-    async loadPlanState(docId: string): Promise<PlanItemState[]> {
-      const data = await readSidecar(docId)
-      return data.planState ?? []
-    },
-
-    async savePlanState(docId: string, planState: PlanItemState[]): Promise<void> {
-      // Spread existing so annotations / signoffs / unknown fields owned by the
-      // ReviewStore survive this write untouched.
-      const existing = await readSidecar(docId)
-      await writeSidecar(docId, { ...existing, version: 4, planState })
     },
   }
 }

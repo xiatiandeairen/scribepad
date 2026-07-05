@@ -6,8 +6,7 @@ import type { SessionResponse } from '../../types/api.js'
 import type { Signoff } from '../../types/domain.js'
 import type { DocSource, LlmRunner, ReviewState, ReviewStore } from '../../types/ports.js'
 import { createFsDocSource } from '../adapters/docsource-fs.js'
-import { createPlanStateShim, createSidecarStore } from '../adapters/store-sidecar.js'
-import type { PlanStateShim } from '../adapters/store-sidecar.js'
+import { createSidecarStore } from '../adapters/store-sidecar.js'
 import { createExecaRunner } from '../adapters/llm-execa.js'
 import { validateStateTransition } from '../../core/annotation-state.js'
 import { applyRewrites, rewriteItems } from '../../core/rewrite.js'
@@ -27,14 +26,12 @@ import type {
   RewriteResultEntry,
 } from '../../types/api.js'
 import type { ExtractResult } from '../../types/domain.js'
-import type { PlanItemState } from '../../types/plan.js'
 import { documentStatePath, exportPathFor } from '../paths.js'
 
 /**
  * A rewrite-apply was rejected by the pure splice guard (drift / overlap /
  * out-of-bounds). Carries the core error's `kind` so the route can map it to a
- * 409 Conflict, distinct from an LLM failure (500). Mirrors
- * ReviewNormalizeInputError's role for the review-normalize route.
+ * 409 Conflict, distinct from an LLM failure (500).
  */
 export class RewriteApplyConflictError extends Error {
   readonly kind: RewriteApplyError['kind']
@@ -116,10 +113,6 @@ export class SessionManager {
   private readonly getAiConfig: (() => AiConfig) | undefined
   private readonly docSource: DocSource
   private readonly reviewStore: ReviewStore
-  // HACK(delete with old-path retirement, see plan-frontend-integration Q3):
-  // plan-state persistence bypasses the ReviewStore port via an explicit legacy
-  // shim so the retiring old frontend's lock-after-refresh behavior is unchanged.
-  private readonly planStateShim: PlanStateShim
   private readonly llmRunner: LlmRunner | undefined
   private readonly sessions = new Map<string, DocumentSession>()
   private readonly sessionsByPath = new Map<string, string>()
@@ -137,7 +130,6 @@ export class SessionManager {
     this.docSource = options.docSource ?? createFsDocSource()
     this.reviewStore =
       options.reviewStore ?? createSidecarStore({ repoRoot: this.repoRoot, env: this.env })
-    this.planStateShim = createPlanStateShim({ repoRoot: this.repoRoot, env: this.env })
     this.llmRunner = options.llmRunner
     this.lastActivityAt = this.now().toISOString()
   }
@@ -281,19 +273,6 @@ export class SessionManager {
     const session = this.getSession(id)
     const state = await this.loadState(session.filePath)
     await this.saveState(session.filePath, { ...state, signoffs })
-    session.dirty = true
-    this.touch(session)
-  }
-
-  async readPlanState(id: string): Promise<PlanItemState[]> {
-    const session = this.getSession(id)
-    this.touch(session)
-    return this.planStateShim.loadPlanState(session.filePath)
-  }
-
-  async writePlanState(id: string, planState: PlanItemState[]): Promise<void> {
-    const session = this.getSession(id)
-    await this.planStateShim.savePlanState(session.filePath, planState)
     session.dirty = true
     this.touch(session)
   }
