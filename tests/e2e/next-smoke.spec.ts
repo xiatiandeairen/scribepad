@@ -106,8 +106,8 @@ async function startServer(): Promise<Server> {
   return { child, origin, tmp }
 }
 
-// The server logs `[scribepad] http://127.0.0.1:<port>/s/<id>` on startup; take its
-// origin as the base URL for both /next and /api.
+// The server logs `[scribepad] panel  http://127.0.0.1:<port>/next/` on startup;
+// take its origin as the base URL for both /next and /api.
 function waitForOrigin(child: ChildProcessWithoutNullStreams): Promise<string> {
   return new Promise((resolvePromise, reject) => {
     const timer = setTimeout(() => reject(new Error('timed out waiting for server URL')), 20_000)

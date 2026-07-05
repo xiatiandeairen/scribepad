@@ -1,14 +1,21 @@
 /**
- * Production-session E2E.
+ * Production-session E2E (API-driven).
  *
- * Covers the repo-local shared server model:
+ * Covers the repo-local shared server model as a pure CLI/HTTP contract — no
+ * browser, no SPA. The session lifecycle is driven straight through the server's
+ * own endpoints:
  *   - first CLI command starts the server and opens one document session;
  *   - second CLI command reuses the same server and opens another session;
- *   - /s/:sessionId routes load isolated document content;
- *   - Done closes only the current document session and exports final markdown;
+ *   - GET /api/sessions/:id/file serves each session's isolated document;
+ *   - POST /api/sessions/:id/done closes that session and exports final markdown
+ *     (this is the same gate the /next Done button and `--wait` block on);
  *   - when all sessions are Done, the shared server exits after active idle.
+ *
+ * Driving Done via the HTTP endpoint (instead of a UI button) is the point: the
+ * `--wait` blocking gate and the export path are server contracts, independent of
+ * any frontend.
  */
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -22,9 +29,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(__dirname, '../..')
 const SERVER_ENTRY = resolve(REPO_ROOT, 'dist/server/index.js')
 
-type CliResult = {
+type CliServer = {
   child: ChildProcessWithoutNullStreams
-  url: string
+  origin: string
+  sessionId: string
 }
 
 test.describe('shared production server sessions', () => {
@@ -36,15 +44,10 @@ test.describe('shared production server sessions', () => {
     await cleanupRegistryServer()
   })
 
-  test('one repo server can host two document sessions and exits after both are Done', async ({
-    browser,
-  }) => {
+  test('one repo server can host two document sessions and exits after both are Done', async () => {
     test.setTimeout(45_000)
 
     const tmp = await mkdtemp(join(tmpdir(), 'scribepad-e2e-'))
-    const xdgConfig = join(tmp, 'xdg-config')
-    const xdgState = join(tmp, 'xdg-state')
-    const xdgRuntime = join(tmp, 'xdg-runtime')
     const configPath = join(tmp, 'config.json')
     const firstDoc = join(tmp, 'first.md')
     const secondDoc = join(tmp, 'second.md')
@@ -56,54 +59,50 @@ test.describe('shared production server sessions', () => {
     await writeFile(firstDoc, '# First Plan\n\nFirst document body.\n', 'utf8')
     await writeFile(secondDoc, '# Second Plan\n\nSecond document body.\n', 'utf8')
 
-    const env = {
-      SCRIBEPAD_CONFIG: configPath,
-      XDG_CONFIG_HOME: xdgConfig,
-      XDG_STATE_HOME: xdgState,
-      XDG_RUNTIME_DIR: xdgRuntime,
-    }
+    const env = makeEnv(tmp, configPath)
     const first = await startCli(firstDoc, env)
     const second = await runCliToCompletion(secondDoc, env)
 
-    const firstUrl = new URL(first.url)
-    const secondUrl = new URL(second.url)
-    expect(secondUrl.origin).toBe(firstUrl.origin)
-    expect(secondUrl.pathname).not.toBe(firstUrl.pathname)
+    // registry reuse: one repo server hosts both, with distinct sessions.
+    expect(second.origin).toBe(first.origin)
+    expect(second.sessionId).not.toBe(first.sessionId)
 
-    const health = await fetch(`${firstUrl.origin}/api/healthz`)
+    const health = await fetch(`${first.origin}/api/healthz`)
     await expect(health.json()).resolves.toEqual({ ok: true })
 
-    const context = await browser.newContext()
-    const firstPage = await context.newPage()
-    const secondPage = await context.newPage()
-    await openAndAssertDocument(firstPage, first.url, 'First Plan', 'First document body.')
-    await openAndAssertDocument(secondPage, second.url, 'Second Plan', 'Second document body.')
+    // Each session serves its own isolated document.
+    await assertSessionDocument(first.origin, first.sessionId, 'First Plan', 'First document body.')
+    await assertSessionDocument(
+      second.origin,
+      second.sessionId,
+      'Second Plan',
+      'Second document body.',
+    )
 
-    await doneAndAccept(firstPage)
-    await expect.poll(() => sessionExists(first.url)).toBe(false)
-    await expect.poll(() => sessionExists(second.url)).toBe(true)
+    // Done the first session via the server's done endpoint — the export gate.
+    const firstOut = await postDone(first.origin, first.sessionId)
+    expect(firstOut).toBe(agentPathFor(firstDoc, env))
+    await expect.poll(() => sessionExists(first.origin, first.sessionId)).toBe(false)
+    await expect.poll(() => sessionExists(second.origin, second.sessionId)).toBe(true)
     await expect(readFile(agentPathFor(firstDoc, env), 'utf8')).resolves.toBe(
       '# First Plan\n\nFirst document body.\n',
     )
 
-    await expect(secondPage.locator('.reader')).toContainText('Second document body.')
-    await doneAndAccept(secondPage)
-    await expect.poll(() => sessionExists(second.url)).toBe(false)
+    const secondOut = await postDone(second.origin, second.sessionId)
+    expect(secondOut).toBe(agentPathFor(secondDoc, env))
+    await expect.poll(() => sessionExists(second.origin, second.sessionId)).toBe(false)
     await expect(readFile(agentPathFor(secondDoc, env), 'utf8')).resolves.toBe(
       '# Second Plan\n\nSecond document body.\n',
     )
 
+    // Both sessions Done → shared server exits after active idle.
     await expectProcessExit(first.child, 20_000)
-    await context.close()
   })
 
-  test('wait mode prints only the approved export path after Done', async ({ browser }) => {
+  test('wait mode prints only the approved export path after Done', async () => {
     test.setTimeout(45_000)
 
     const tmp = await mkdtemp(join(tmpdir(), 'scribepad-wait-e2e-'))
-    const xdgConfig = join(tmp, 'xdg-config')
-    const xdgState = join(tmp, 'xdg-state')
-    const xdgRuntime = join(tmp, 'xdg-runtime')
     const configPath = join(tmp, 'config.json')
     const doc = join(tmp, 'wait.md')
     await writeFile(
@@ -113,34 +112,30 @@ test.describe('shared production server sessions', () => {
     )
     await writeFile(doc, '# Wait Plan\n\nReviewed by human.\n', 'utf8')
 
-    const env = {
-      SCRIBEPAD_CONFIG: configPath,
-      XDG_CONFIG_HOME: xdgConfig,
-      XDG_STATE_HOME: xdgState,
-      XDG_RUNTIME_DIR: xdgRuntime,
-    }
+    const env = makeEnv(tmp, configPath)
     const waitCli = await startWaitCli(doc, env)
+    await assertSessionDocument(
+      waitCli.origin,
+      waitCli.sessionId,
+      'Wait Plan',
+      'Reviewed by human.',
+    )
 
-    const context = await browser.newContext()
-    const page = await context.newPage()
-    await openAndAssertDocument(page, waitCli.url, 'Wait Plan', 'Reviewed by human.')
-    await doneAndAccept(page)
+    // Attach the stdout waiter before Done so the printed path can't be missed.
+    const exited = waitForStdoutOnExit(waitCli.child, 20_000)
+    await postDone(waitCli.origin, waitCli.sessionId)
+    const stdout = await exited
 
-    const stdout = await waitForStdoutOnExit(waitCli.child, 20_000)
     const outputPath = stdout.trim()
     expect(outputPath).toBe(agentPathFor(doc, env))
     expect(stdout).toBe(`${outputPath}\n`)
     await expect(readFile(outputPath, 'utf8')).resolves.toBe('# Wait Plan\n\nReviewed by human.\n')
-    await context.close()
   })
 
-  test('wait mode works when reusing an existing repo server', async ({ browser }) => {
+  test('wait mode works when reusing an existing repo server', async () => {
     test.setTimeout(45_000)
 
     const tmp = await mkdtemp(join(tmpdir(), 'scribepad-wait-reuse-e2e-'))
-    const xdgConfig = join(tmp, 'xdg-config')
-    const xdgState = join(tmp, 'xdg-state')
-    const xdgRuntime = join(tmp, 'xdg-runtime')
     const configPath = join(tmp, 'config.json')
     const firstDoc = join(tmp, 'first.md')
     const waitDoc = join(tmp, 'wait.md')
@@ -152,114 +147,155 @@ test.describe('shared production server sessions', () => {
     await writeFile(firstDoc, '# First Plan\n\nKeep server alive.\n', 'utf8')
     await writeFile(waitDoc, '# Wait Plan\n\nReuse existing server.\n', 'utf8')
 
-    const env = {
-      SCRIBEPAD_CONFIG: configPath,
-      XDG_CONFIG_HOME: xdgConfig,
-      XDG_STATE_HOME: xdgState,
-      XDG_RUNTIME_DIR: xdgRuntime,
-    }
+    const env = makeEnv(tmp, configPath)
     const first = await startCli(firstDoc, env)
     const waitCli = await startWaitCli(waitDoc, env)
 
-    const firstUrl = new URL(first.url)
-    const waitUrl = new URL(waitCli.url)
-    expect(waitUrl.origin).toBe(firstUrl.origin)
-    expect(waitUrl.pathname).not.toBe(firstUrl.pathname)
+    expect(waitCli.origin).toBe(first.origin)
+    expect(waitCli.sessionId).not.toBe(first.sessionId)
 
-    const context = await browser.newContext()
-    const waitPage = await context.newPage()
-    await openAndAssertDocument(waitPage, waitCli.url, 'Wait Plan', 'Reuse existing server.')
-    await doneAndAccept(waitPage)
+    await assertSessionDocument(
+      waitCli.origin,
+      waitCli.sessionId,
+      'Wait Plan',
+      'Reuse existing server.',
+    )
 
-    const stdout = await waitForStdoutOnExit(waitCli.child, 20_000)
+    const waitExited = waitForStdoutOnExit(waitCli.child, 20_000)
+    await postDone(waitCli.origin, waitCli.sessionId)
+    const stdout = await waitExited
+
     const outputPath = stdout.trim()
     expect(outputPath).toBe(agentPathFor(waitDoc, env))
     expect(stdout).toBe(`${outputPath}\n`)
-    await expect.poll(() => sessionExists(first.url)).toBe(true)
+    // The shared server stays up because the first session is still active.
+    await expect.poll(() => sessionExists(first.origin, first.sessionId)).toBe(true)
 
-    const firstPage = await context.newPage()
-    await openAndAssertDocument(firstPage, first.url, 'First Plan', 'Keep server alive.')
-    await doneAndAccept(firstPage)
+    await assertSessionDocument(first.origin, first.sessionId, 'First Plan', 'Keep server alive.')
+    await postDone(first.origin, first.sessionId)
     await expectProcessExit(first.child, 20_000)
-    await context.close()
   })
 })
 
-async function openAndAssertDocument(
-  page: Page,
-  url: string,
+function makeEnv(tmp: string, configPath: string): Record<string, string> {
+  return {
+    SCRIBEPAD_CONFIG: configPath,
+    XDG_CONFIG_HOME: join(tmp, 'xdg-config'),
+    XDG_STATE_HOME: join(tmp, 'xdg-state'),
+    XDG_RUNTIME_DIR: join(tmp, 'xdg-runtime'),
+  }
+}
+
+async function assertSessionDocument(
+  origin: string,
+  sessionId: string,
   title: string,
   body: string,
 ): Promise<void> {
-  await page.goto(url)
-  await expect(page.locator('.reader h1')).toHaveText(title)
-  await expect(page.locator('.reader')).toContainText(body)
-  await expect(page.locator('button.primary', { hasText: 'Done' })).toBeVisible()
+  const res = await fetch(`${origin}/api/sessions/${sessionId}/file`)
+  expect(res.ok).toBe(true)
+  const doc = (await res.json()) as { content: string }
+  expect(doc.content).toContain(title)
+  expect(doc.content).toContain(body)
 }
 
-async function doneAndAccept(page: Page): Promise<void> {
-  page.once('dialog', async (dialog) => {
-    expect(dialog.message()).toContain('已完成任务')
-    await dialog.accept()
+async function postDone(origin: string, sessionId: string): Promise<string> {
+  const res = await fetch(`${origin}/api/sessions/${sessionId}/done`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   })
-  await page.locator('button.primary', { hasText: 'Done' }).click()
+  expect(res.ok).toBe(true)
+  const body = (await res.json()) as { ok: boolean; outputPath: string }
+  expect(body.ok).toBe(true)
+  return body.outputPath
 }
 
-async function sessionExists(url: string): Promise<boolean> {
-  const parsed = new URL(url)
-  const sessionId = parsed.pathname.split('/').pop()
-  if (!sessionId) return false
-  const res = await fetch(`${parsed.origin}/api/sessions/${sessionId}`)
+async function sessionExists(origin: string, sessionId: string): Promise<boolean> {
+  const res = await fetch(`${origin}/api/sessions/${sessionId}`)
   return res.ok
 }
 
-async function startCli(filePath: string, extraEnv: Record<string, string>): Promise<CliResult> {
-  const child = spawn(process.execPath, [SERVER_ENTRY, filePath], {
-    cwd: REPO_ROOT,
-    env: { ...process.env, NODE_ENV: 'production', ...extraEnv },
-  })
-  const url = await waitForUrl(child)
-  return { child, url }
+async function startCli(filePath: string, extraEnv: Record<string, string>): Promise<CliServer> {
+  const child = spawnCli([SERVER_ENTRY, filePath], extraEnv)
+  return resolveCliServer(child, 'stdout')
 }
 
 async function runCliToCompletion(
   filePath: string,
   extraEnv: Record<string, string>,
-): Promise<{ url: string }> {
-  const child = spawn(process.execPath, [SERVER_ENTRY, filePath], {
-    cwd: REPO_ROOT,
-    env: { ...process.env, NODE_ENV: 'production', ...extraEnv },
-  })
-  const url = await waitForUrl(child)
+): Promise<{ origin: string; sessionId: string }> {
+  const child = spawnCli([SERVER_ENTRY, filePath], extraEnv)
+  const server = await resolveCliServer(child, 'stdout')
   await expectProcessExit(child, 5_000)
-  return { url }
+  return { origin: server.origin, sessionId: server.sessionId }
 }
 
 async function startWaitCli(
   filePath: string,
   extraEnv: Record<string, string>,
-): Promise<CliResult> {
-  const child = spawn(process.execPath, [SERVER_ENTRY, filePath, '--wait'], {
+): Promise<CliServer> {
+  const child = spawnCli([SERVER_ENTRY, filePath, '--wait'], extraEnv)
+  // In --wait mode the CLI logs go to stderr; stdout is reserved for the export path.
+  return resolveCliServer(child, 'stderr')
+}
+
+function spawnCli(
+  argv: string[],
+  extraEnv: Record<string, string>,
+): ChildProcessWithoutNullStreams {
+  return spawn(process.execPath, argv, {
     cwd: REPO_ROOT,
     env: { ...process.env, NODE_ENV: 'production', ...extraEnv },
   })
-  const url = await waitForUrl(child, 'stderr')
-  return { child, url }
 }
 
-function waitForUrl(
+/**
+ * Resolve the running server's origin + this CLI's session id from its logs.
+ * A fresh server logs the `/next/` panel URL (origin only) — the session id is
+ * then read back from the fallback-session endpoint. A CLI that reuses an
+ * existing server logs the `/s/<id>` session URL directly.
+ */
+async function resolveCliServer(
   child: ChildProcessWithoutNullStreams,
-  stream: 'stdout' | 'stderr' = 'stdout',
-): Promise<string> {
+  stream: 'stdout' | 'stderr',
+): Promise<CliServer> {
+  const info = await waitForServerInfo(child, stream)
+  const sessionId = info.sessionId ?? (await fetchFallbackSessionId(info.origin))
+  return { child, origin: info.origin, sessionId }
+}
+
+async function fetchFallbackSessionId(origin: string): Promise<string> {
+  const res = await fetch(`${origin}/api/session`)
+  if (!res.ok) throw new Error(`GET /api/session failed: ${res.status}`)
+  const body = (await res.json()) as { id?: string }
+  if (!body.id) throw new Error('session response missing id')
+  return body.id
+}
+
+function waitForServerInfo(
+  child: ChildProcessWithoutNullStreams,
+  stream: 'stdout' | 'stderr',
+): Promise<{ origin: string; sessionId?: string }> {
   return new Promise((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error('timed out waiting for URL')), 10_000)
+    let buffer = ''
+    const timer = setTimeout(() => reject(new Error('timed out waiting for server URL')), 10_000)
     const onData = (chunk: Buffer): void => {
-      const text = chunk.toString('utf8')
-      const match = text.match(/http:\/\/(?:127\.0\.0\.1|localhost):\d+\/s\/[^\s]+/)
-      if (!match) return
-      clearTimeout(timer)
-      child[stream].off('data', onData)
-      resolvePromise(match[0])
+      buffer += chunk.toString('utf8')
+      // Reuse CLIs print the `/s/<id>` session URL; fresh CLIs print the `/next/` panel URL.
+      const sessionMatch = buffer.match(/http:\/\/(?:127\.0\.0\.1|localhost):\d+\/s\/([^\s]+)/)
+      if (sessionMatch) {
+        clearTimeout(timer)
+        child[stream].off('data', onData)
+        resolvePromise({ origin: new URL(sessionMatch[0]).origin, sessionId: sessionMatch[1] })
+        return
+      }
+      const panelMatch = buffer.match(/(http:\/\/(?:127\.0\.0\.1|localhost):\d+)\/next\//)
+      if (panelMatch) {
+        clearTimeout(timer)
+        child[stream].off('data', onData)
+        resolvePromise({ origin: panelMatch[1] })
+      }
     }
     child[stream].on('data', onData)
     child.stderr.on('data', (chunk) => {

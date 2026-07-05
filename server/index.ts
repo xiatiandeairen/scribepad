@@ -108,7 +108,6 @@ const app = createApp({
     config = { ...config, ai }
   },
   requestClose: sessionMode ? () => requestClose() : undefined,
-  serveClient: sessionMode,
 })
 
 const port = explicitPort ?? 0
@@ -118,7 +117,6 @@ const server = serve({ fetch: app.fetch, port, hostname: config.host }, (info) =
   const panelUrl = `${baseUrl}/next/`
   log(`[scribepad] serving ${filePath}`)
   log(`[scribepad] panel  ${panelUrl}`)
-  log(`[scribepad] legacy ${opened.url}`)
   if (openFlag) openBrowser(panelUrl)
   if (sessionMode) {
     log('[scribepad] server is shared by document sessions in this repo')

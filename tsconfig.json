@@ -24,6 +24,6 @@
       "@types/*": ["types/*"]
     }
   },
-  "include": ["src/**/*", "types/**/*", "tests/**/*"],
+  "include": ["types/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist", "server"]
 }

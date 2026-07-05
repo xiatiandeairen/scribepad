@@ -18,10 +18,9 @@
     "scribepad": "./dist/server/index.js"
   },
   "scripts": {
-    "dev": "concurrently -n vite,server -c blue,green \"npm:dev:client\" \"npm:dev:server\"",
-    "dev:client": "vite",
-    "dev:server": "PORT=3001 tsx watch --include types --include server server/index.ts sample.md",
-    "build": "vite build && tsc -p tsconfig.server.json",
+    "dev": "npm run dev:server",
+    "dev:server": "PORT=3001 tsx watch --include types --include server server/index.ts plan-data-backend.md",
+    "build": "tsc -p tsconfig.server.json",
     "prepare": "npm run build",
     "start": "NODE_ENV=production node dist/server/index.js plan-data-backend.md",
     "test": "vitest run --passWithNoTests",
@@ -45,17 +44,11 @@
     "mdast-util-from-markdown": "^2.0.1",
     "mdast-util-gfm": "^3.1.0",
     "micromark-extension-gfm": "^3.0.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.9.0",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.0",
-    "concurrently": "^9.1.0",
     "eslint": "^9.15.0",
     "eslint-config-prettier": "^9.1.0",
     "playwright": "^1.49.0",
@@ -63,7 +56,6 @@
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.15.0",
-    "vite": "^5.4.11",
     "vitest": "^2.1.5"
   }
 }
