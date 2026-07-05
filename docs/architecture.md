@@ -68,11 +68,10 @@ docsource-fs.ts   # 实现 DocSource:文件系统
 ```
 server/
 ├── index.ts / app.ts    # composition root:构造 SessionManager(默认注入 3 适配器)
-├── routes/              # HTTP 边界(file / annotations / plan-state / rewrite / ai / review-normalize / session[s])
+├── routes/              # HTTP 边界(file / annotations / rewrite / ai / session[s])
 └── services/            # 服务端用例
-    ├── session-manager.ts   # 会话中枢:经注入端口做 doc/annotations/plan-state/rewrite
-    ├── ai-status.ts         # AI 健康探针(execa runner,可注入)
-    └── review-normalize.ts  # Review 目录规范化(execa runner)
+    ├── session-manager.ts   # 会话中枢:经注入端口做 doc/annotations/signoffs/rewrite
+    └── ai-status.ts         # AI 健康探针(execa runner,可注入)
 ```
 
 ### Frontend (`src/`) 与 Shared types (`types/`)
