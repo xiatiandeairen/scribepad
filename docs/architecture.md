@@ -8,26 +8,28 @@
 
 ```
 scribepad/
-├── core/       # 可移植内核(无框架;只依赖 types/ + zod)
-├── server/     # Hono delivery + 驱动适配器 + composition root
-├── src/        # React SPA (client)
-├── types/      # 跨端共享契约 + 端口接口 (single source of truth)
-├── tests/      # {unit,e2e}
-├── docs/       # 项目文档
-└── 配置        # tsconfig{,.server,.core}.json / vite / eslint / prettier / vitest / playwright
+├── core/          # 可移植内核(无框架)
+├── types/         # 跨端共享契约 + 端口接口(无运行时,single source of truth)
+├── server/        # Hono delivery + 驱动适配器 + composition root + CLI 入口
+├── client-next/   # 无构建 React 审阅面板(UMD + Babel standalone),由 server 挂在 /next/*
+├── tests/         # {unit,e2e}
+├── docs/          # 项目文档
+└── 配置           # tsconfig{,.server,.core}.json / eslint / prettier / vitest / playwright
 ```
+
+旧的 `src/` React SPA 与 vite 构建链已退休:面板改由 `client-next/` 无构建方案承载,`npm run build` 只编 server(含 core)。
 
 ## 层次边界(六边形)
 
-| 层 | 目录 | 职责 | 运行时 |
-|---|---|---|---|
-| **Driving Adapters** | `server/routes`、`server/index.ts`、`src/` | 谁驱动 core:HTTP / CLI / (未来 UI、集成 lib/MCP) | Node / 浏览器 |
-| **Composition Root** | `server/index.ts`、`server/app.ts` | 唯一装配点:构造并注入具体适配器 | Node |
-| **CORE(内核)** | `core/` | 领域用例 + 数据模型 + agent 编排 —— **无框架** | 无关(可移植) |
-| **Driven Ports** | `types/ports.ts` | core 对外的需求接口 | 无运行时 |
-| **Driven Adapters** | `server/adapters/` | 端口实现(标准品) | Node |
+| 层                   | 目录                                            | 职责                                                  | 运行时       |
+| -------------------- | ----------------------------------------------- | ----------------------------------------------------- | ------------ |
+| **Driving Adapters** | `server/routes`、`server/index.ts`、`client-next/` | 谁驱动 core:HTTP / CLI / 浏览器面板(未来 集成 lib/MCP) | Node / 浏览器 |
+| **Composition Root** | `server/index.ts`、`server/app.ts`              | 唯一装配点:构造并注入具体适配器                       | Node         |
+| **CORE(内核)**      | `core/`                                          | 领域用例 + 数据模型 + agent 编排 —— **无框架**        | 无关(可移植) |
+| **Driven Ports**     | `types/ports.ts`                                | core 对外的需求接口                                    | 无运行时     |
+| **Driven Adapters**  | `server/adapters/`                              | 端口实现(标准品)                                      | Node         |
 
-**核心不变量**:`core/` 只 import `types/` 与 `zod`;**绝不** import 框架 / `server` / `src` / `adapters`。这是"内核可被集成"的前提,由 ESLint(E0 边界规则)+ 独立 `tsconfig.core.json` typecheck 双重强制。
+**核心不变量**:`core/` 只 import `types/`、`zod` 与 mdast 解析栈(`mdast-util-from-markdown` / `mdast-util-gfm` / `micromark-extension-gfm`);**绝不** import 框架 / `server` / `src` / `adapters`。这是"内核可被集成"的前提,由 ESLint(E0 边界规则,黑名单制)+ 独立 `tsconfig.core.json` typecheck 双重强制。
 
 ## 模块分层
 
@@ -35,87 +37,163 @@ scribepad/
 
 ```
 core/
-├── result.ts            # ok / err 构造(Result 原语)
-├── schema.ts            # Zod schema,satisfies 绑定 types/domain(编译期防漂移)
-├── annotation-state.ts  # 批注生命周期状态机(纯函数)
-├── rewrite.ts           # rewrite 用例:防漂移过滤 + rewriteTask(注入 LlmRunner)
+├── result.ts             # ok / err 构造(Result 原语)
+├── schema.ts             # Zod schema,satisfies 绑定 types/domain(编译期防漂移)
+├── annotation-state.ts   # 批注生命周期状态机(纯函数)
+├── rewrite.ts            # rewriteItems(注入 LlmRunner) + applyRewrites(源码 splice + 漂移守卫)
+├── section-insert.ts     # 定位新条目插入点 + 下一个稳定 label(D/R/Q)
+├── extract/              # markdown → ExtractResult(8 节结构事实)
+│   ├── index.ts          # extract():分节 → points + decisions + meta
+│   ├── sections.ts       # H2 分节 + 8 InfoKind 分类
+│   ├── points.ts         # 非决策节 → ExtractedItem(cells / group / ordinal)
+│   ├── decisions.ts      # 决策节 → DecisionCard(chosen / pick / question / core / cost / facts)
+│   ├── labels.ts         # grounding:标签 G/D/R/P/Q/B + 引用图扫描 / 导航
+│   └── text.ts           # mdast → 文本工具
+├── verify/               # ExtractResult → Problem[](v2 四层模型)
+│   ├── index.ts          # verify():presence + form + graph 规则,合并可选 AI findings
+│   ├── rules/            # presence / form / graph / context / types
+│   ├── severity.ts       # 机制 × 置信度 → severity(仅 rule + conf 1.0 可为 blocker)
+│   └── judge.ts          # emptyJudge —— LlmJudge seam(设计好、暂闲置)
+├── refine/loop.ts        # 修复闭环:extract → verify →(LLM 改)→ 重抽,四终止态(已实现待接线)
 └── agent/
-    ├── task.ts          # TaskSpec / AgentError(任务描述 = prompt + schema + retry)
-    └── runner.ts        # runTask:build → run → 剥 fence → 校验 → 重试
+    ├── task.ts           # TaskSpec / AgentError(任务描述 = prompt + schema + retry)
+    ├── runner.ts         # runTask:build → run → 剥 fence → 校验 → 重试
+    └── tasks/            # 具体 agent 任务(chat / selectionEdit)
 ```
 
-**已就位但未实现的 seam**(下一步功能工作,类型/端口已备好):`types/domain.ts` 的 `ExtractedItem` / `Gap` / `ConfirmState` / `ContextPack` —— 抽取、缺口检测、置信度确认、上下文包的领域契约已定,core 侧实现待建。
+**核心能力**:
+
+- **extract** — markdown → 8 节结构事实。每个信息点带 `kind` / `label?` / `refs` / `anchor?` / `role`,并保留结构事实 `cells`(GFM 表格逐列)、`group`(粗体子组 / H3)、`ordinal`(有序序号);决策节另出 `DecisionCard`(chosen / pick / question / core / cost / facts);文档级出 `meta`(H1 + 引言 blockquote)。degrade 而不 throw。
+- **verify** — 在 extract 结果上跑 v2 四层模型(L1 presence / L2 form / L3 graph;L4 = 机制 + 置信度贯穿全程)出 `Problem[]`。本期只发确定性规则(mechanism='rule');AI 半边(LlmJudge)是留好的 seam,接入后其 findings 经引文校验 + severity 推导,永不产生 blocker。
+- **refine** — 修复闭环(extract → verify → LLM 改写 → 重抽),四终止态(ready / paused-needs-human / stalled / max-iter),永远返回 best-so-far。已实现,尚未接到路由。
+- **grounding** — 稳定标签 `^[GDRPQB]\d+$`(G 目标闸 / D 决策 / R 风险 / P 前置 / Q 待确认;B = 目标节里的已核实 bug),扫描引用图并支持按标签导航;`S`/`A`/`§` 是前端由 ordinal 派生的伪标签,不是后端标签。
 
 ### Driven Ports (`types/ports.ts`)
 
 ```
 LlmRunner    run(req) → Result<string, LlmError>        # 跑 agent 任务,返回原始文本
-ReviewStore  load/save(docId, ReviewState)              # 持久化用户状态(不落抽取结果)
-DocSource    read/write(docId)                          # 供文档内容
+ReviewStore  load / save(docId, ReviewState)            # 持久化用户状态(不落抽取结果)
+DocSource    read / write?(docId)                       # 供文档内容(write 可选:只读源可省)
 ```
+
+`ReviewState = { annotations, signoffs }` —— 只存"用户决定了什么",抽取结果从不持久化(每次重算)。
 
 ### Driven Adapters (`server/adapters/`)
 
 ```
-llm-execa.ts      # 实现 LlmRunner:execa spawn 任意 LLM CLI(claude/codex/…)
-store-sidecar.ts  # 实现 ReviewStore:sidecar JSON(工厂注入 repoRoot/env)
-docsource-fs.ts   # 实现 DocSource:文件系统
+llm-execa.ts       # 实现 LlmRunner:execa spawn LLM CLI(codex-cli / claude-code-cli)
+store-sidecar.ts   # 实现 ReviewStore:sidecar JSON(工厂注入 repoRoot/env)
+docsource-fs.ts    # 实现 DocSource:文件系统
 ```
+
 **单一 spawn 路径**:全应用只有 `llm-execa` 用 execa。
 
 ### Backend delivery (`server/`)
 
 ```
 server/
-├── index.ts / app.ts    # composition root:构造 SessionManager(默认注入 3 适配器)
-├── routes/              # HTTP 边界(file / annotations / rewrite / ai / session[s])
-└── services/            # 服务端用例
-    ├── session-manager.ts   # 会话中枢:经注入端口做 doc/annotations/signoffs/rewrite
+├── index.ts / app.ts   # composition root + CLI 入口:构造 SessionManager(默认注入 3 适配器);
+│                         client-next/ 静态挂载 /next/*;/api 优先于静态兜底
+├── routes/             # HTTP 边界
+│   ├── sessions.ts     # sessions-scoped 路由族(主面,见下)
+│   ├── session.ts      # /api/session 单会话 fallback(CLI one-shot:get / heartbeat / close)
+│   ├── file / annotations / rewrite.ts   # 非会话 fallback,经 getFallbackSession 复用会话中枢
+│   └── ai.ts           # AI 配置 / 状态 / 自测
+└── services/
+    ├── session-manager.ts   # 会话中枢:经注入端口做 doc / annotations / signoffs /
+    │                          extract / rewrite / rewrite-apply / selection-op
+    ├── agent-dispatch.ts    # AgentRequest → AgentEvent 流(纯 async generator,无 IO)
     └── ai-status.ts         # AI 健康探针(execa runner,可注入)
 ```
 
-### Frontend (`src/`) 与 Shared types (`types/`)
+### Shared types (`types/`)
 
 ```
-src/     main.tsx · App.tsx · components/{Reader,Sidebar,DiffModal,PlanPanel} · lib/{markdown,plan-inspector,anchor,api} · styles
-types/   ports.ts · domain.ts · result.ts · annotation.ts · plan.ts · document.ts · api.ts
+types/   ports.ts · domain.ts · verify.ts · annotation.ts · api.ts · result.ts
 ```
+
+无运行时,只有手写契约类型;`core/schema.ts` 的 Zod schema 用 `satisfies` 绑定 `types/domain`,类型/schema 漂移即编译错。
+
+### Frontend (`client-next/`)
+
+无构建 React 面板:浏览器直接加载 React UMD + Babel standalone,server 把目录挂在 `/next/*`。各 `.jsx` 不进 tsc、不打包;只在运行时消费 `types/api.ts` 定义的 HTTP 契约(sessions-scoped)。模块职责与加载顺序见 `client-next/接入说明.md`。
+
+## HTTP 面
+
+**sessions-scoped 路由族(`routes/sessions.ts`,主面)**:
+
+```
+POST /api/sessions/open                     # 打开文档 → { sessionId, url }
+GET  /api/sessions/:id                       # 会话状态
+POST /api/sessions/:id/connect|heartbeat|disconnect
+GET  /api/sessions/:id/file                  # 读源;POST .../save 写源
+GET  /api/sessions/:id/annotations           # 读;POST 整表替换
+GET  /api/sessions/:id/signoffs              # 读;POST 整表替换
+GET  /api/sessions/:id/extract               # 重算,从不持久化
+POST /api/sessions/:id/rewrite               # 改写草稿(不落盘)
+POST /api/sessions/:id/rewrite-apply         # 改写 + splice + save + 重抽(冲突 → 409)
+POST /api/sessions/:id/agent                 # 单一 AI 通道(SSE:progress* → final)
+POST /api/sessions/:id/done                  # 合闸导出;GET .../wait 阻塞到合闸
+```
+
+**fallback / 其它**:`/api/session`(+ `/heartbeat` `/close`)、非会话 `/api/file` `/api/save` `/api/annotations` `/api/rewrite`(经 `getFallbackSession`)、`/api/ai/{config,status,test}`、`/healthz`,以及 `/next/*` 静态挂载。
+
+已退休、**不要再写**的端点:`/api/extract`(fallback)、`/api/session/export`、`/api/plan-state`、`/api/review-normalize`。
+
+## 数据流
+
+**读路径**:`markdown → core/extract → ExtractResult →(前端 adaptExtract 派生 PLAN_MODEL)→ 渲染`。
+
+**写路径统一为"改 markdown 源 → 重抽取"**:`rewrite-apply` 与 selection-op 真改文档时都复用 `applyRewrites` 做源码 splice(带漂移守卫:锚点 selection 不匹配即 409),save 后重抽,前端重渲染。抽取结果从不持久化。
+
+**AI 通道**(agent SSE,单一入口 `POST /api/sessions/:id/agent`,`agent-dispatch` 分三族):
+
+- `command`(ai-review / ai-refs)—— 复用 `core/verify`,**零 LLM**、确定性。
+- `chat` / `selection-op:explain` —— 一轮 LLM(core/agent 的 chat 任务)。
+- `selection-op` dcard | risk | open —— 真改文档并落盘(`section-insert` 定位 + LLM 起草 + splice),终态 `final` 带 `mutated:true`。
+
+## CLI
+
+```
+scribepad <doc> [--open] [--wait]
+```
+
+同一 repo 内共享一台 server(registry 记录 url/pid);再次 `scribepad` 复用存活的 server 并打开新文档会话。`--open` 打开浏览器面板(`/next/`);`--wait` 是 **agent 审阅闸**:进程阻塞到 `POST /api/sessions/:id/done` 合闸,把导出 `outputPath` 打到 stdout(其余日志走 stderr),然后退出。
 
 ## Dependency Rules
 
 **强制约束**(违反 = 设计 bug):
 
-| 模块 | 允许 import | 禁止 import |
-|---|---|---|
-| `types/**` | (纯类型) | 任何运行时 |
-| `core/**` | `types/**`、`zod` | **框架 / `server` / `src` / `adapters`**(E0,lint 强制) |
-| `server/adapters/**` | `types/**`、`core/result`(仅 Result 原语)、外部库(execa) | `core` 领域模块 / `server/services` / `routes` |
-| `server/services/**` | `types/**`、`core/**`、`server/adapters/**` | `server/routes/**` |
-| `server/routes/**` | `types/**`、`server/services/**` | 直接 `adapters` |
-| composition root(`server/app.ts`、`index.ts`) | `core`、`server/**`、`types` | —(唯一知道"具体适配器"处) |
-| `src/lib/**` | `types/**` | React、`server/**` |
-| `src/components/**` | `src/lib/**`、`types/**`、React | `server/**` |
+| 模块                                       | 允许 import                                             | 禁止 import                                                        |
+| ------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| `types/**`                                 | (纯类型)                                               | 任何运行时                                                        |
+| `core/**`                                  | `types/**`、`zod`、mdast 栈                            | **框架 / `server` / `src` / `adapters`**(E0,lint 强制)          |
+| `server/adapters/**`                       | `types/**`、`core/result`(仅 Result 原语)、外部库(execa) | `core` 领域模块 / `server/services` / `routes`                    |
+| `server/services/**`                       | `types/**`、`core/**`、`server/adapters/**`           | `server/routes/**`                                                |
+| `server/routes/**`                         | `types/**`、`server/services/**`                       | 直接 `adapters`                                                   |
+| composition root(`server/app.ts`、`index.ts`) | `core`、`server/**`、`types`                        | —(唯一知道"具体适配器"处)                                        |
+| `client-next/**`                           | 运行时 HTTP 契约(`types/api` 形状)、React UMD          | `server/**`、`core/**`(浏览器侧只有 HTTP,不 import 服务端代码)   |
 
 **核心原则**:
+
 - **依赖方向单向**;core 只认端口接口,具体适配器由 composition root 注入 → 测试可注入 fake,集成可注入 PM 的实现。
 - **前后端互不可见**,只通过 `types/api.ts` 的 HTTP 契约。
 - **两条演进路线共用同一 `core/`**:独立产品 = server + 标准品适配器;集成到 PM = PM import core + 提供自己的 `ReviewStore`/`DocSource`/`LlmRunner`,不改 core 一行。
 
 ## 命名约定
 
-- 文件:小写连字符(`llm-execa.ts`)— React 组件用 PascalCase(`Reader.tsx`)
+- 文件:小写连字符(`llm-execa.ts`)— client-next React 组件用 PascalCase(`GoalSection`、`ChatPanel`)
 - 导出:命名导出优先;默认导出仅 main entry
 - 类型导入:`import type`(ESLint `consistent-type-imports` 强制)
 
 ## 编译 / 运行
 
 ```
-npm run dev         # 同时启 vite (:5173) + hono (:3001)
-npm run build       # vite build → dist/client + tsc → dist/server(含 core)
-npm run start       # node dist/server/index.js sample.md
-npm run typecheck   # 三 tsconfig:client / server / core(隔离)
+npm run dev         # tsx watch 起 hono server(:3001);面板在 /next/
+npm run build       # tsc -p tsconfig.server.json → dist/server(含 core);无 bundler
+npm run start       # node dist/server/index.js <doc>
+npm run typecheck   # 三 tsconfig:默认 / server / core(隔离)
 npm run lint        # eslint(含 E0 边界) + prettier --check
 npm run test        # vitest (单测)
-npm run test:e2e    # playwright (e2e,自动起 dev server)
+npm run test:e2e    # playwright (e2e)
 ```
-
