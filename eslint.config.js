@@ -15,7 +15,7 @@ export default tseslint.config(
   },
   // E0: the portable core must stay framework-free so it can be imported into the
   // PM project without scribepad's server/client. Bars hono/react/execa and any
-  // reach into server/src/adapters. See docs/refactor-plan.md §5 E0.
+  // reach into server/src/adapters. See docs/architecture.md.
   {
     files: ['core/**/*.ts'],
     rules: {

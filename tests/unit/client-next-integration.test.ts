@@ -86,7 +86,7 @@ describe('server static mount /next/* (D-5)', () => {
 
 describe('adaptExtract: real ExtractResult → PLAN_MODEL (D-1)', () => {
   const { adaptExtract, buildPlanModel } = loadContract()
-  const result = extract(readFileSync(`${repoRoot}/plan-data-backend.md`, 'utf8'))
+  const result = extract(readFileSync(`${repoRoot}/tests/fixtures/plan-data-backend.md`, 'utf8'))
   const model = buildPlanModel(
     adaptExtract(result, { project: 'scribepad', file: 'plan-data-backend.md' }),
   )
@@ -192,7 +192,7 @@ describe('adaptExtract: real ExtractResult → PLAN_MODEL (D-1)', () => {
 // P1–P4 / Q1–Q5 / 9 acceptance rows) before asserting — not copied from above.
 describe('adaptExtract: SOC2 auth plan → PLAN_MODEL (D-1, N=2)', () => {
   const { adaptExtract, buildPlanModel } = loadContract()
-  const result = extract(readFileSync(`${repoRoot}/plan-auth-soc2.md`, 'utf8'))
+  const result = extract(readFileSync(`${repoRoot}/tests/fixtures/plan-auth-soc2.md`, 'utf8'))
   const model = buildPlanModel(
     adaptExtract(result, { project: 'scribepad', file: 'plan-auth-soc2.md' }),
   )

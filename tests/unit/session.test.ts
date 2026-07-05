@@ -5,12 +5,11 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
-  outputPathFor,
   RewriteApplyConflictError,
   SelectionOpError,
   SessionManager,
 } from '../../server/services/session-manager'
-import { docIdFor, documentStatePath, repoIdFor } from '../../server/paths'
+import { docIdFor, documentStatePath, exportPathFor, repoIdFor } from '../../server/paths'
 import { extract } from '../../core/extract/index.js'
 import type { Signoff } from '../../types/domain.js'
 import type { LlmRunner } from '../../types/ports.js'
@@ -24,10 +23,10 @@ function makeSignoff(pointId: string): Signoff {
   return { pointId, label: pointId.toUpperCase(), signedAt: '2026-01-01T00:00:00.000Z' }
 }
 
-describe('outputPathFor', () => {
+describe('exportPathFor', () => {
   it('writes exports under XDG state for the repo and document', async () => {
     const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
-    const path = outputPathFor('/repo', '/repo/docs/plan.md', { XDG_STATE_HOME: xdg })
+    const path = exportPathFor('/repo', '/repo/docs/plan.md', { XDG_STATE_HOME: xdg })
     expect(path).toBe(
       join(
         xdg,
@@ -123,7 +122,7 @@ describe('SessionManager', () => {
     const opened = manager.openSession(filePath)
     const done = await manager.done(opened.sessionId)
 
-    expect(done.outputPath).toBe(outputPathFor(dir, filePath, { XDG_STATE_HOME: xdg }))
+    expect(done.outputPath).toBe(exportPathFor(dir, filePath, { XDG_STATE_HOME: xdg }))
     await expect(readFile(done.outputPath, 'utf8')).resolves.toBe('# Plan\n\nFinal content.\n')
     expect(() => manager.getSession(opened.sessionId)).toThrow(/Session not found/)
   })
@@ -231,7 +230,7 @@ describe('SessionManager — extract', () => {
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-extract-'))
     const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
     const filePath = join(dir, 'plan.md')
-    await writeFile(filePath, readFixture('plan-auth-soc2.md'), 'utf8')
+    await writeFile(filePath, readFixture('tests/fixtures/plan-auth-soc2.md'), 'utf8')
 
     const manager = new SessionManager({ repoRoot: dir, env: { XDG_STATE_HOME: xdg } })
     const { sessionId } = manager.openSession(filePath)
@@ -342,7 +341,7 @@ describe('SessionManager — applySelectionOp', () => {
   }
 
   it('runs the closed loop for risk: draft → insert → save → re-extract as R6', async () => {
-    const source = readFixture('plan-auth-soc2.md')
+    const source = readFixture('tests/fixtures/plan-auth-soc2.md')
     const { manager, sessionId, filePath } = await setupSession(
       source,
       fakeLlm({ risk: '缓存击穿', impact: '延迟升高', mitigation: '单飞兜底' }),
@@ -379,7 +378,7 @@ describe('SessionManager — applySelectionOp', () => {
   })
 
   it('does not persist when the LLM fails to produce a valid fragment', async () => {
-    const source = readFixture('plan-auth-soc2.md')
+    const source = readFixture('tests/fixtures/plan-auth-soc2.md')
     const badLlm: LlmRunner = { run: async () => ({ ok: true, value: 'not json' }) }
     const { manager, sessionId, filePath } = await setupSession(source, badLlm)
 

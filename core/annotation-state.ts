@@ -6,7 +6,7 @@
  * IO-free (E0 boundary — core imports only types/ and zod). The server service
  * keeps its own copy until callers migrate onto this one (Strangler Fig).
  *
- * State machine (docs/plan.md §1.4; AnnotationState in types/annotation.ts):
+ * State machine (docs/architecture.md; AnnotationState in types/annotation.ts):
  *   draft     — newly created; user hasn't issued AI rewrite yet
  *   discussed — AI rewrite in flight or returned, awaiting user decision
  *   decided   — locked to prevent AI drift; AI rewrite filtered server-side

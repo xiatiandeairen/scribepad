@@ -1,8 +1,8 @@
 /**
- * Runtime Zod schemas validating the domain model at boundaries (LLM output,
- * sidecar reads). Each schema is pinned to its hand-written type in
- * types/domain.ts via `satisfies z.ZodType<...>`, so a type/schema drift fails
- * to compile. See docs/refactor-plan.md §5 Q2.
+ * Compile-time type↔schema drift guard. Each Zod schema is pinned to its
+ * hand-written type in types/domain.ts via `satisfies z.ZodType<...>`, so a
+ * drift between the two fails to compile. No runtime consumer yet — these
+ * schemas exist purely for the compile-time guard. See docs/architecture.md.
  *
  * zod is the core's validation tool, not a framework — allowed under the E0
  * boundary (which bars hono/react/execa/server/src from core).

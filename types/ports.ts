@@ -5,7 +5,7 @@
  * fs) are injected at the composition root. This is what lets the core be imported
  * into the PM project without scribepad's HTTP server or React client — the two
  * evolution paths (standalone / integration) differ only in which adapters get
- * injected. See docs/refactor-plan.md §3.
+ * injected. See docs/architecture.md.
  */
 import type { Result } from './result.js'
 import type { Annotation } from './annotation.js'

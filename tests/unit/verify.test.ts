@@ -20,7 +20,7 @@ const blockerRuleIds = (problems: Problem[]): string[] =>
     .sort()
 
 describe('verify(plan-auth-soc2.md) — the compliant benchmark is ready', () => {
-  const problems = runOn('plan-auth-soc2.md')
+  const problems = runOn('tests/fixtures/plan-auth-soc2.md')
 
   it('produces zero blockers (0 blocker === ready)', () => {
     expect(problems.filter((problem) => problem.severity === 'blocker')).toHaveLength(0)

@@ -1,13 +1,8 @@
 /**
- * Unit tests for core/annotation-state.ts (the extracted pure state machine).
- *
- * Mirrors the semantics locked by tests/unit/state-machine.test.ts for the
- * original server/services/annotations.ts implementation: the P3a hexagonal
- * split must not change any transition rule.
- *
- * State machine (docs/plan.md §1.4): draft / discussed / decided.
- * `prev === undefined` (new annotation) and `prev === next` (idempotent) are
- * always accepted; everything outside the legal set is rejected.
+ * Unit tests for core/annotation-state.ts — the annotation lifecycle state
+ * machine: draft / discussed / decided. `prev === undefined` (new annotation)
+ * and `prev === next` (idempotent) are always accepted; everything outside the
+ * legal transition set is rejected.
  */
 import { describe, it, expect } from 'vitest'
 import { validateStateTransition } from '../../core/annotation-state.js'

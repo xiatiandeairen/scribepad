@@ -6,11 +6,11 @@ import { byLabel, extract, relatedPoints } from '../../core/extract/index.js'
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const readFixture = (name: string): string => readFileSync(repoRoot + name, 'utf8')
 
-const soc2 = extract(readFixture('plan-auth-soc2.md'))
-const sample = extract(readFixture('sample.md'))
+const soc2 = extract(readFixture('tests/fixtures/plan-auth-soc2.md'))
+const sample = extract(readFixture('tests/fixtures/sample.md'))
 const degraded = extract(readFixture('tests/fixtures/plan-degraded.md'))
 const light = extract(readFixture('tests/fixtures/plan-light.md'))
-const dataBackend = extract(readFixture('plan-data-backend.md'))
+const dataBackend = extract(readFixture('tests/fixtures/plan-data-backend.md'))
 
 describe('extract(plan-auth-soc2.md) — the compliant benchmark', () => {
   it('recognizes all 8 sections (one point per InfoKind)', () => {

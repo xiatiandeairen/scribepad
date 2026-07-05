@@ -162,7 +162,7 @@ export class SessionManager {
       filePath: absolutePath,
       repoRoot: this.repoRoot,
       sidecarPath: documentStatePath(this.repoRoot, absolutePath, this.env),
-      outputPath: outputPathFor(this.repoRoot, absolutePath, this.env),
+      outputPath: exportPathFor(this.repoRoot, absolutePath, this.env),
       status: 'active',
       startedAt: now,
       lastActivityAt: now,
@@ -494,14 +494,6 @@ export class SessionManager {
       waiter.resolve(result)
     }
   }
-}
-
-export function outputPathFor(
-  repoRoot: string,
-  filePath: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  return exportPathFor(repoRoot, filePath, env)
 }
 
 function toResponse(session: DocumentSession): SessionResponse {

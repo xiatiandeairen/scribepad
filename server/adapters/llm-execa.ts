@@ -1,9 +1,8 @@
 /**
  * llm-execa — LlmRunner adapter that spawns provider CLIs via execa.
  *
- * Replicates the command/args/stdin handling of claude-cli.ts and codex-cli.ts,
- * but returns Result instead of throwing, and uses execa v9 (pure ESM) for
- * cleaner subprocess management.
+ * Returns Result instead of throwing, and uses execa v9 (pure ESM) for clean
+ * subprocess management.
  *
  * Error mapping:
  *   timeout     → execa timedOut flag
@@ -47,7 +46,7 @@ export function createExecaRunner(config: AiConfig): LlmRunner {
 }
 
 async function runClaude(config: AiConfig, prompt: string, timeoutMs: number): Promise<string> {
-  // Mirrors claude-cli.ts: command + [...args, prompt], capture stdout.
+  // claude: command + [...args, prompt], capture stdout.
   const result = await execa(config.claude.command, [...config.claude.args, prompt], {
     timeout: timeoutMs,
   })
@@ -55,8 +54,8 @@ async function runClaude(config: AiConfig, prompt: string, timeoutMs: number): P
 }
 
 async function runCodex(config: AiConfig, prompt: string, timeoutMs: number): Promise<string> {
-  // Mirrors codex-cli.ts: prompt goes to stdin, output-last-message to a temp
-  // file because codex stdout is chatty progress noise.
+  // codex: prompt goes to stdin, output-last-message to a temp file because
+  // codex stdout is chatty progress noise.
   const tempDir = await mkdtemp(join(tmpdir(), 'scribepad-execa-'))
   const outputFile = join(tempDir, 'last-message.txt')
   try {
