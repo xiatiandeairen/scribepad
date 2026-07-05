@@ -326,7 +326,7 @@ function App({ sessionId, doc }){
 }
 
 /* ═══ 数据加载：live fetch → adaptExtract → buildPlanModel → 渲染 ═══
-   启动 POST /api/sessions/open 打开目标 plan（?doc= 可覆盖，默认 plan-data-backend.md）→
+   默认跟随服务器启动时打开的文档（GET /api/session）；?doc= 显式覆盖打开指定文档 →
    GET extract + file → 写入全局 PLAN_MODEL / PLAN_DOC_SOURCE（App 只读它们）。fetch / 派生 /
    互转都在 plan-net.jsx（后端接线层）。loading / error 用 React state（无构建环境）；
    error 提供重试 + 离线 fixture 兜底（sessionId=null，仅只读浏览，写路径提示离线）。 */
@@ -350,14 +350,19 @@ function PlanBoot({ status, message, onRetry, onOffline }){
 const planRoot=ReactDOM.createRoot(document.getElementById('root'));
 async function bootstrapPlan(){
   planRoot.render(<PlanBoot status="loading"/>);
-  const doc=new URLSearchParams(location.search).get('doc')||'plan-data-backend.md';
+  const requested=new URLSearchParams(location.search).get('doc');
+  let sessionId, doc;
   try {
-    const { sessionId }=await openPlan(doc);
+    if(requested){                                /* ?doc= 覆盖：显式打开指定文档（多文档）*/
+      ({ sessionId }=await openPlan(requested)); doc=requested;
+    } else {                                      /* 默认：跟随服务器启动时打开的文档 */
+      const s=await getCurrentSession(); sessionId=s.id; doc=s.fileName;
+    }
     await fetchPlanUpdate(sessionId, doc);        /* 写入 window.PLAN_MODEL + PLAN_DOC_SOURCE */
     planRoot.render(<App sessionId={sessionId} doc={doc}/>);
   } catch(e){
     const onOffline=window.PLAN_FALLBACK_SOURCE
-      ? ()=>{ window.PLAN_MODEL=buildPlanModel(window.PLAN_FALLBACK_SOURCE); planRoot.render(<App sessionId={null} doc={doc}/>); }
+      ? ()=>{ window.PLAN_MODEL=buildPlanModel(window.PLAN_FALLBACK_SOURCE); planRoot.render(<App sessionId={null} doc={doc||''}/>); }
       : null;
     planRoot.render(<PlanBoot status="error" message={String((e&&e.message)||e)} onRetry={bootstrapPlan} onOffline={onOffline}/>);
   }

@@ -26,6 +26,8 @@ const sp=(sessionId)=>`/api/sessions/${encodeURIComponent(sessionId)}`;
 
 /* ── REST 封装（一资源一函数）── */
 function openPlan(doc){ return fetchJson('POST','/api/sessions/open',{ filePath:doc }); }
+/* 服务器启动时打开的文档（fallback session）—— 无 ?doc 时默认跟随它 */
+function getCurrentSession(){ return fetchJson('GET','/api/session'); }
 function getExtract(sessionId){ return fetchJson('GET',`${sp(sessionId)}/extract`); }
 function getFile(sessionId){ return fetchJson('GET',`${sp(sessionId)}/file`); }
 function getAnnotations(sessionId){ return fetchJson('GET',`${sp(sessionId)}/annotations`); }
@@ -123,7 +125,7 @@ function toggleSignoff(signoffs, label){
 }
 
 Object.assign(window,{
-  fetchJson, openPlan, getExtract, getFile,
+  fetchJson, openPlan, getCurrentSession, getExtract, getFile,
   getAnnotations, postAnnotations, getSignoffs, postSignoffs, postRewriteApply,
   buildModelFromExtract, applyPlanUpdate, fetchPlanUpdate,
   computeSrcRange, noteToAnnotation, annotationToNote, buildNoteHighlights, toggleSignoff,
