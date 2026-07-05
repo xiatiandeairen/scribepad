@@ -33,6 +33,7 @@
   },
   "files": [
     "dist",
+    "client-next",
     "README.md",
     "README.zh-CN.md",
     "docs/assets/scribepad-review-demo.gif"
