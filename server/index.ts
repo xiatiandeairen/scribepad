@@ -7,6 +7,7 @@
  * and exits after printing the session URL.
  */
 import { serve } from '@hono/node-server'
+import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createApp } from './app.js'
@@ -23,10 +24,22 @@ import { DEFAULT_CONFIG, loadConfig, writeProjectLocalAiConfig } from './config.
 
 const args = process.argv.slice(2)
 const waitMode = args.includes('--wait')
+const openFlag = args.includes('--open')
 const arg = args.find((item) => !item.startsWith('-'))
 if (!arg) {
-  console.error('Usage: scribepad <path-to-markdown> [--wait]')
+  console.error('Usage: scribepad <path-to-markdown> [--open] [--wait]')
   process.exit(1)
+}
+
+/** Best-effort open the default browser; ignores failures (headless / no GUI). */
+function openBrowser(url: string): void {
+  const [cmd, cmdArgs]: [string, string[]] =
+    process.platform === 'darwin'
+      ? ['open', [url]]
+      : process.platform === 'win32'
+        ? ['cmd', ['/c', 'start', '', url]]
+        : ['xdg-open', [url]]
+  execFile(cmd, cmdArgs, () => {})
 }
 
 const log = waitMode ? console.error : console.log
@@ -102,8 +115,11 @@ const port = explicitPort ?? 0
 const server = serve({ fetch: app.fetch, port, hostname: config.host }, (info) => {
   baseUrl = `http://${config.host}:${info.port}`
   const opened = sessionManager.openSession(filePath)
+  const panelUrl = `${baseUrl}/next/`
   log(`[scribepad] serving ${filePath}`)
-  log(`[scribepad] ${opened.url}`)
+  log(`[scribepad] panel  ${panelUrl}`)
+  log(`[scribepad] legacy ${opened.url}`)
+  if (openFlag) openBrowser(panelUrl)
   if (sessionMode) {
     log('[scribepad] server is shared by document sessions in this repo')
     void writeRegistry(repoRoot, {
