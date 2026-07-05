@@ -252,18 +252,18 @@ function deriveOpenPoint(p){
     title:q||p.title, text:q||p.text };
 }
 
-/* 做法节：checkpoint「N. 标题（file）」→ step（序号 ui.num、括号内 ui.file）；detail 按 group 折进父步骤 ui.pts。
-   富块（模块结构树 tree / 子 commit subs）本期不派生（D-1 富块 v2）。 */
+/* 做法节：checkpoint 带后端 ordinal（有序列表项序号 / H3「N.」序号）→ step（ui.num=ordinal）；
+   两种写法（GFM 有序列表 / H3「### N.」）统一走 ordinal 一条路，不再靠脆弱的字面 N. 前缀识别。
+   title 从「标题（file）」取 file，无括号时整段作 title；H3 文本残留的 N. 前缀顺带剥掉。
+   detail 按 group 折进父步骤 ui.pts。富块（模块结构树 tree / 子 commit subs）本期不派生（D-1 富块 v2）。 */
 function deriveBehaviorSteps(points){
   const steps=[];
   (points||[]).forEach(p=>{
-    const m=/^(\d+)\.\s*([\s\S]+)$/.exec(String(p.text||'').trim());
-    if(p.role==='checkpoint'&&m){
-      const rest=m[2].trim();
-      const fm=/^(.+?)（([\s\S]+)）\s*$/.exec(rest);
-      steps.push({ ...p, role:'step', title:fm?fm[1].trim():rest,
-        ui:{ ...p.ui, num:m[1], file:fm?fm[2].trim():'', pts:[] } });
-    }
+    if(p.role!=='checkpoint'||p.ordinal==null) return;
+    const rest=String(p.text||'').trim().replace(/^\d+\.\s*/,'').trim();
+    const fm=/^(.+?)（([\s\S]+)）\s*$/.exec(rest);
+    steps.push({ ...p, role:'step', title:fm?fm[1].trim():rest,
+      ui:{ ...p.ui, num:String(p.ordinal), file:fm?fm[2].trim():'', pts:[] } });
   });
   (points||[]).forEach(p=>{
     if(p.role!=='detail'||!p.group) return;

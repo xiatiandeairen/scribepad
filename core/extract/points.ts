@@ -20,6 +20,7 @@ interface RawItem {
   groupTitle?: string
   cells?: CellFact[]
   group?: string
+  ordinal?: number
 }
 
 interface H3Group {
@@ -35,11 +36,16 @@ export function pointsFromSection(section: SectionSource): ExtractedItem[] {
     if (group.heading !== undefined && group.headingNode) {
       // The H3 itself is the checkpoint; its body items hang off it as details.
       // The H3 heading seeds `group` for its body, which a bold lead-in refines.
+      // An H3 that opens with a literal `N.` (e.g. `### 1. …`) carries an ordinal
+      // — the same structural fact an ordered-list item does, so the frontend can
+      // number behavior steps regardless of which of the two shapes a plan uses.
+      const ordinal = ordinalFromHeading(group.heading)
       raws.push({
         text: group.heading,
         node: group.headingNode,
         role: 'checkpoint',
         groupTitle: group.heading,
+        ...(ordinal !== undefined ? { ordinal } : {}),
       })
       for (const raw of collectBlockItems(group.nodes, group.heading)) {
         raws.push({ ...raw, role: 'detail', groupTitle: group.heading })
@@ -79,6 +85,13 @@ interface BlockItem {
   node: Nodes
   cells?: CellFact[]
   group?: string
+  ordinal?: number
+}
+
+/** 1-based ordinal parsed from an H3 heading that opens with `N.`, else undefined. */
+function ordinalFromHeading(heading: string): number | undefined {
+  const match = /^(\d+)\.\s/.exec(heading)
+  return match ? Number(match[1]) : undefined
 }
 
 /**
@@ -115,16 +128,30 @@ function boldLeadOf(paragraph: Paragraph): string | undefined {
 }
 
 function collectListItems(list: List, items: BlockItem[], group?: string): void {
+  // Ordered lists carry a per-item ordinal (GFM `start` defaults to 1); the number
+  // advances per list item, so `- [ ]` tasks and unordered lists get none.
+  const ordered = list.ordered === true
+  const start = typeof list.start === 'number' ? list.start : 1
+  let index = 0
   for (const child of list.children as ListItem[]) {
     const paragraph = child.children.find((node) => node.type === 'paragraph')
     if (paragraph) {
       const text = compact(textOf(paragraph))
       // Anchor to the whole list item so a checkbox / nested content stays in range.
-      if (text) items.push({ text, node: child, ...(group ? { group } : {}) })
+      if (text) {
+        const ordinal = ordered ? start + index : undefined
+        items.push({
+          text,
+          node: child,
+          ...(group ? { group } : {}),
+          ...(ordinal !== undefined ? { ordinal } : {}),
+        })
+      }
     }
     for (const nested of child.children) {
       if (nested.type === 'list') collectListItems(nested, items, group)
     }
+    index += 1
   }
 }
 
@@ -177,6 +204,7 @@ function buildPoint(
   if (anchor) item.anchor = anchor
   if (raw.cells) item.cells = raw.cells
   if (raw.group) item.group = raw.group
+  if (raw.ordinal !== undefined) item.ordinal = raw.ordinal
   return item
 }
 

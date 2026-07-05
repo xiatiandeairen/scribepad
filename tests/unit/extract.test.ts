@@ -208,6 +208,43 @@ describe('extract — P2 structural fidelity (cells / group / meta / decision he
     expect(d3?.cost).toContain('删除后')
   })
 
+  it('records a 1-based ordinal on GFM ordered-list behavior points (soc2 做法)', () => {
+    // soc2 writes 做法 as a standard ordered list `1. … 2. …`; remark strips the
+    // literal `N.` marker, so ordinal is the only surviving sequence fact.
+    const ordinals = soc2.points
+      .filter((point) => point.kind === 'behavior' && point.ordinal !== undefined)
+      .map((point) => point.ordinal)
+    expect(ordinals).toEqual([1, 2, 3, 4, 5, 6])
+  })
+
+  it('records an ordinal parsed from `### N.` behavior headings (plan-data-backend 做法)', () => {
+    // plan-data-backend writes 做法 as H3 subsections `### 1. … ### 2. …`; the
+    // ordinal is parsed from the heading so the frontend has a single code path.
+    const ordinals = dataBackend.points
+      .filter(
+        (point) =>
+          point.kind === 'behavior' && point.role === 'checkpoint' && point.ordinal !== undefined,
+      )
+      .map((point) => point.ordinal)
+    expect(ordinals).toEqual([1, 2, 3, 4, 5, 6])
+  })
+
+  it('omits ordinal on points not sourced from an ordered list or `N.` heading', () => {
+    // soc2 goals/risks come from tables, scope from unordered lists, behavior
+    // details from unordered lists — none carry an ordinal.
+    const nonSequential = soc2.points.filter(
+      (point) => point.kind === 'goal' || point.kind === 'risk' || point.kind === 'scope',
+    )
+    expect(nonSequential.length).toBeGreaterThan(0)
+    expect(nonSequential.every((point) => point.ordinal === undefined)).toBe(true)
+    // Behavior detail points (unordered sub-lists under an H3) also have none.
+    const details = dataBackend.points.filter(
+      (point) => point.kind === 'behavior' && point.role === 'detail',
+    )
+    expect(details.length).toBeGreaterThan(0)
+    expect(details.every((point) => point.ordinal === undefined)).toBe(true)
+  })
+
   it('extracts doc meta: H1 title + intro blockquote verbatim', () => {
     expect(soc2.meta?.title).toBe('Auth 重构：SOC2 合规的会话管理')
     expect(soc2.meta?.intro).toContain('状态：待 review')

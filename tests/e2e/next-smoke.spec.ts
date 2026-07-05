@@ -75,6 +75,9 @@ test.describe('/next served by the production Hono server', () => {
       // Key content is non-empty: goal hard-constraint rows and risk rows rendered.
       expect(await page.locator('.glist .grow').count()).toBeGreaterThan(0)
       expect(await page.locator('.riskl .riskrow').count()).toBeGreaterThan(0)
+      // 做法 steps render for both the H3 `### N.` shape (plan-data-backend) and the
+      // GFM ordered-list shape (soc2) — pins the ordinal-based step derivation.
+      expect(await page.locator('.steps .step').count()).toBeGreaterThan(0)
       // Title from the live document meta (not the offline fixture).
       await expect(page.locator('h1.doc-title')).not.toBeEmpty()
 

@@ -216,11 +216,10 @@ describe('adaptExtract: SOC2 auth plan → PLAN_MODEL (D-1, N=2)', () => {
     expect(badge('goal')).toBe('4 约束')
     expect(badge('scope')).toBe('5 不做')
     expect(badge('dec')).toBe('3 已定')
-    // '0 步': soc2 writes 做法 as a GFM ordered list, whose "N." marker remark
-    // strips, so deriveBehaviorSteps (which requires a literal "N." prefix, as in
-    // plan-data-backend's H3 "### 1. …" headings) derives no steps. Pinned as the
-    // real value — this over-fit was invisible at N=1.
-    expect(badge('how')).toBe('0 步')
+    // '6 步': soc2 writes 做法 as a GFM ordered list; deriveBehaviorSteps keys off
+    // the backend `ordinal` structural fact, so both the ordered-list shape (soc2)
+    // and the H3 "### N." shape (plan-data-backend) number their 6 steps.
+    expect(badge('how')).toBe('6 步')
     expect(badge('acc')).toBe('9 项')
     expect(badge('risk')).toBe('4 中')
     expect(badge('pre')).toBe('4 拍板')
@@ -257,6 +256,12 @@ describe('adaptExtract: SOC2 auth plan → PLAN_MODEL (D-1, N=2)', () => {
   it('splits scope into 5 out non-goals', () => {
     expect(model.byKind.scope.filter((p) => p.role === 'in').length).toBeGreaterThan(0)
     expect(model.byKind.scope.filter((p) => p.role === 'out').length).toBe(5)
+  })
+
+  it('derives 6 behavior steps with ui.num 1..6 from the GFM ordered list', () => {
+    const steps = model.byKind.behavior
+    expect(steps).toHaveLength(6)
+    expect(steps.map((s) => s.ui.num)).toEqual(['1', '2', '3', '4', '5', '6'])
   })
 
   it('maps open-question columns to ui.owner / ui.due / ui.blocks', () => {

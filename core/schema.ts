@@ -57,6 +57,7 @@ export const extractedItemSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
   cells: z.array(cellFactSchema).optional(),
   group: z.string().optional(),
+  ordinal: z.number().int().positive().optional(),
 }) satisfies z.ZodType<ExtractedItem>
 
 export const decisionCardSchema = z.object({

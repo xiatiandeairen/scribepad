@@ -82,6 +82,14 @@ export interface ExtractedItem {
    * decision/approach sub-buckets). Structural fact only — no UI role attached.
    */
   group?: string
+  /**
+   * 1-based ordinal when this item carries an intrinsic sequence number: a GFM
+   * ordered-list item (its position under `ordered: true`) or an H3 heading that
+   * opens with a literal `N.` (e.g. `### 1. …`). Lets the frontend number
+   * behavior steps without re-parsing a fragile literal `N.` prefix out of text.
+   * Structural fact only — absent for paragraphs, tables, and unordered lists.
+   */
+  ordinal?: number
 }
 
 /**
