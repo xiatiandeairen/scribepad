@@ -29,18 +29,6 @@ function AgentConfig({ cfg, onSave, onClose }){
           </div>
 
           <div className="acfg">
-            <div className="clb">{I.book}工作目录</div>
-            <div className="chint">agent 只在该目录内读写文件与执行命令。</div>
-            <input className="cwd-input" value={d.cwd} spellCheck={false} onChange={e=>setD(s=>({...s,cwd:e.target.value}))}/>
-          </div>
-
-          <div className="acfg">
-            <div className="clb">{I.code}调用命令</div>
-            <div className="chint">对话消息作为 prompt 传给这条命令，输出流式回传到左侧对话。</div>
-            <pre className="cli-cmd">{cli.cmd(d.cwd)}</pre>
-          </div>
-
-          <div className="acfg">
             <div className="clb">{I.check}连接状态</div>
             <div className="cli-status">
               {status==='checking'
