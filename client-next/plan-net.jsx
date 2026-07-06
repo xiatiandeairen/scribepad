@@ -35,6 +35,10 @@ function postAnnotations(sessionId, annotations){ return fetchJson('POST',`${sp(
 function getSignoffs(sessionId){ return fetchJson('GET',`${sp(sessionId)}/signoffs`); }
 function postSignoffs(sessionId, signoffs){ return fetchJson('POST',`${sp(sessionId)}/signoffs`,{ signoffs }); }
 function postRewriteApply(sessionId, items){ return fetchJson('POST',`${sp(sessionId)}/rewrite-apply`,{ items }); }
+/* 完成审阅 · 交付：合上 `scribepad --wait` 的 agent 审阅闸。done 是终态动作——服务端把批准稿
+   写到 outputPath 并 resolve --wait 的 waiter，agent 据此拿回稿继续。content = 当前审阅源
+   （window.PLAN_DOC_SOURCE，与服务端文件同步）；缺省时 body 留空，服务端导出磁盘现有内容。 */
+function postDone(sessionId, content){ return fetchJson('POST',`${sp(sessionId)}/done`, typeof content==='string'?{ content }:undefined); }
 
 /* ExtractResult → PLAN_MODEL（复用 contract 层派生，后端字段变更时只对齐 plan-contract）。 */
 function buildModelFromExtract(result, doc){
@@ -124,9 +128,28 @@ function toggleSignoff(signoffs, label){
     : [...signoffs, { pointId:label, label, signedAt:new Date().toISOString() }];
 }
 
+/* ── 交付态机（纯函数，可单测）──
+   idle → delivering → delivered（终态，不可撤销）；delivering 失败回 idle 供重试。
+   交付是终态动作，delivered 后任何事件都停在 delivered。 */
+function deliverTransition(state, event){
+  if(state==='delivered') return 'delivered';
+  if(event==='start') return 'delivering';
+  if(event==='ok') return 'delivered';
+  if(event==='fail') return 'idle';
+  return state;
+}
+/* 交付态 + 会话存在性 → 按钮呈现（无会话不可交付；交付中 / 交付后禁用）。 */
+function deliverButton(state, hasSession){
+  if(!hasSession) return { disabled:true, done:false, label:'完成审阅 · 交付' };
+  if(state==='delivered') return { disabled:true, done:true, label:'已交付给 agent' };
+  if(state==='delivering') return { disabled:true, done:false, label:'交付中…' };
+  return { disabled:false, done:false, label:'完成审阅 · 交付' };
+}
+
 Object.assign(window,{
   fetchJson, openPlan, getCurrentSession, getExtract, getFile,
-  getAnnotations, postAnnotations, getSignoffs, postSignoffs, postRewriteApply,
+  getAnnotations, postAnnotations, getSignoffs, postSignoffs, postRewriteApply, postDone,
   buildModelFromExtract, applyPlanUpdate, fetchPlanUpdate,
   computeSrcRange, noteToAnnotation, annotationToNote, buildNoteHighlights, toggleSignoff,
+  deliverTransition, deliverButton,
 });

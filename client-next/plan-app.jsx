@@ -55,6 +55,8 @@ function App({ sessionId, doc }){
   /* ── 文档 / 审阅 ── */
   const [saveState,setSaveState]=useState('saved');
   const [spin,setSpin]=useState(false);
+  const [delivery,setDelivery]=useState('idle');  /* 交付态机：idle → delivering → delivered（终态） */
+  const delivered=delivery==='delivered';
   const [signoffs,setSignoffs]=useState([]);      /* 后端 Signoff[] 为单一真源 */
   const signed=signoffs.map(s=>s.label);          /* 派生：UI 只认 label 列表 */
   const [notes,setNotes]=useState([]);            /* 后端 annotations（GET 加载） */
@@ -106,6 +108,22 @@ function App({ sessionId, doc }){
     finally{ setSpin(false); setSaveState('saved'); }
   }
   const saveLabel={ saved:'已保存', saving:'更新中…', synced:'已同步' }[saveState];
+
+  /* ── 完成审阅 · 交付：合上 --wait 的 agent 审阅闸（终态动作，二次确认 + 交付后收尾）── */
+  const deliverBtn=deliverButton(delivery, !!sessionId);
+  async function onDeliver(){
+    if(deliverBtn.disabled) return;
+    if(!window.confirm('确定完成审阅并交付？--wait 的 agent 会据此拿回当前批准稿继续，交付不可撤销。')) return;
+    setDelivery(d=>deliverTransition(d,'start'));
+    try{
+      await postDone(sessionId, window.PLAN_DOC_SOURCE);
+      setDelivery(d=>deliverTransition(d,'ok'));
+      flash('已交付，agent 可继续');
+    }catch(e){
+      setDelivery(d=>deliverTransition(d,'fail'));
+      flash('交付失败：'+((e&&e.message)||e));
+    }
+  }
 
   /* ── 会话管理 ── */
   useEffect(()=>{ setSessions(ss=>ss.map(s=>s.id===activeSid?{...s,msgs:messages}:s)); },[messages]);
@@ -264,13 +282,15 @@ function App({ sessionId, doc }){
   }
 
   return (
-    <div className={`app${chatOpen?'':' chat-closed'}${rightOpen?'':' right-closed'}`}>
+    <div className={`app${chatOpen?'':' chat-closed'}${rightOpen?'':' right-closed'}${delivered?' delivered':''}`}>
       <header className="topbar">
         <div className="tb-logo"><span className="mark">{I.sparkF}</span>Spec</div>
         <div className="tb-div"></div>
         <div className="tb-crumb"><span className="proj">{PLAN_MODEL.meta.project}</span><span className="sep">/</span><span>docs / {PLAN_MODEL.meta.file}</span></div>
         <div className="savepill" data-st={saveState}><span className="d"></span>{saveLabel} · {PLAN_MODEL.meta.status}</div>
         <button className={`tb-btn tb-refresh${spin?' spin':''}`} title="同步 / 刷新" onClick={refresh}>{I.refresh}</button>
+        <button className={`tb-deliver${deliverBtn.done?' done':''}`} title="完成审阅并把批准稿交付给 --wait 的 agent"
+          disabled={deliverBtn.disabled} onClick={onDeliver}>{I.check}<span className="an">{deliverBtn.label}</span></button>
         <div className="tb-spacer"></div>
         <button className="tb-btn kbd" onClick={()=>setCmdk(true)}>{I.search}<kbd>⌘K</kbd></button>
         <button className="tb-agent" title="配置 Agent" onClick={()=>setAgentOpen(true)}>
@@ -301,7 +321,7 @@ function App({ sessionId, doc }){
           </div>
         )}
         {backStack.length>0&&<button className="backpill" onClick={goBack}>{I.send}返回跳转前的位置</button>}
-        {tool && <SelToolbar pos={tool}
+        {tool && !delivered && <SelToolbar pos={tool}
           onRefine={()=>{ setSelCtx(tool.text.slice(0,60)); setTool(null); setChatOpen(true); }}
           onRewrite={()=>{ setRwQuote(tool.text); setRwOpen(true); }}
           onAnnotate={addAnnotation}
