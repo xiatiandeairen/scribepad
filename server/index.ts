@@ -20,6 +20,7 @@ import {
   writeRegistry,
 } from './registry.js'
 import { SessionManager } from './services/session-manager.js'
+import { createStubLlmRunner } from './adapters/llm-stub.js'
 import { DEFAULT_CONFIG, loadConfig, writeProjectLocalAiConfig } from './config.js'
 
 const args = process.argv.slice(2)
@@ -86,6 +87,9 @@ const sessionManager = new SessionManager({
   repoRoot,
   baseUrl: () => baseUrl,
   getAiConfig: () => config.ai,
+  // Test-only deterministic LLM for the browser write-path E2E; opt-in via env so
+  // the default path always builds the real execa runner (never affects production).
+  llmRunner: process.env.SCRIBEPAD_STUB_LLM ? createStubLlmRunner() : undefined,
 })
 
 let shutdownStarted = false
