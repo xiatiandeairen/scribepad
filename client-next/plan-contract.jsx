@@ -1,14 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════════
    Spec Plan — 数据契约层（contract）
    ═══════════════════════════════════════════════════════════════════
-   本文件是「后端 ⇄ 前端」的唯一对接点，与后端 plan-data-backend.md 定义的
-   GET /api/extract → ExtractResult { points, decisions } 严格对齐。
+   本文件是「后端 ⇄ 前端」的唯一对接点，与后端 types/api.ts 的
+   GET /api/sessions/:id/extract → ExtractResult { points, decisions, meta } 对齐。
 
    ┌─ 契约字段（后端原生，勿改名）──────────────────────────────┐
    │ ExtractedItem:                                              │
    │   id          string   — label ?? 结构 id（重排不换 id）     │
    │   kind        InfoKind — 8 类，与 8 节一一对应               │
-   │   label?      string   — 稳定标签 ^[GDRPQ]\d+$              │
+   │   label?      string   — 稳定标签 ^[GDRPQB]\d+$（B=目标节bug）│
    │   refs        string[] — 正文引用的标签（可悬空）            │
    │   text        string   — 点的正文（可含 {标签} token）       │
    │   source      'rule'|'ai'                                   │
@@ -22,12 +22,12 @@
    ┌─ UI 扩展字段（adapter 填充，后端格式细化时只改这里）────────┐
    │ point.title / point.role / point.ui{…}  — 各节专用展示数据   │
    │ decision.question / pick / facts / cost / core              │
-   │ UI 伪标签：B\d+（bug）、S\d+（做法步骤）、A\d+（验收）、      │
-   │            §1…§8（章节）— 仅前端导航用，非后端 label          │
+   │ UI 伪标签：S\d+（做法步骤）、A\d+（验收）、§1…§8（章节）      │
+   │            — 仅前端导航用，非后端 label（B 是后端目标节标签）  │
    └────────────────────────────────────────────────────────────┘
 
    消费方式：PLAN_MODEL = buildPlanModel(PLAN_SOURCE)（见文件尾）。
-   接真实后端时：fetch('/api/extract') → adaptExtract() → buildPlanModel。
+   接真实后端时：GET /api/sessions/:id/extract → adaptExtract() → buildPlanModel。
    详见《接入说明.md》。 */
 
 /* ── 8 类信息点 ↔ 8 节：顺序即文档顺序 ── */
