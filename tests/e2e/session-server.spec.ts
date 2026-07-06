@@ -218,7 +218,7 @@ async function sessionExists(origin: string, sessionId: string): Promise<boolean
 
 async function startCli(filePath: string, extraEnv: Record<string, string>): Promise<CliServer> {
   const child = spawnCli([SERVER_ENTRY, filePath], extraEnv)
-  return resolveCliServer(child, 'stdout')
+  return resolveCliServer(child, 'stdout', filePath)
 }
 
 async function runCliToCompletion(
@@ -226,7 +226,7 @@ async function runCliToCompletion(
   extraEnv: Record<string, string>,
 ): Promise<{ origin: string; sessionId: string }> {
   const child = spawnCli([SERVER_ENTRY, filePath], extraEnv)
-  const server = await resolveCliServer(child, 'stdout')
+  const server = await resolveCliServer(child, 'stdout', filePath)
   await expectProcessExit(child, 5_000)
   return { origin: server.origin, sessionId: server.sessionId }
 }
@@ -237,7 +237,7 @@ async function startWaitCli(
 ): Promise<CliServer> {
   const child = spawnCli([SERVER_ENTRY, filePath, '--wait'], extraEnv)
   // In --wait mode the CLI logs go to stderr; stdout is reserved for the export path.
-  return resolveCliServer(child, 'stderr')
+  return resolveCliServer(child, 'stderr', filePath)
 }
 
 function spawnCli(
@@ -251,50 +251,53 @@ function spawnCli(
 }
 
 /**
- * Resolve the running server's origin + this CLI's session id from its logs.
- * A fresh server logs the `/next/` panel URL (origin only) — the session id is
- * then read back from the fallback-session endpoint. A CLI that reuses an
- * existing server logs the `/s/<id>` session URL directly.
+ * Resolve the running server's origin + this CLI's session id.
+ *
+ * Both fresh and reuse CLIs now log a `/next/?doc=<path>` panel URL (the retired
+ * SPA's `/s/:id` route — and its parseable session id — is gone), so the origin
+ * is read from that line. The session id is then recovered by re-issuing the
+ * idempotent POST /api/sessions/open for the same document: openSession keys on
+ * the resolved path, so this returns the very session the CLI opened rather than
+ * a new one. This also covers the reuse case, whose id `GET /api/session`
+ * (fallback = first session) cannot report.
  */
 async function resolveCliServer(
   child: ChildProcessWithoutNullStreams,
   stream: 'stdout' | 'stderr',
+  filePath: string,
 ): Promise<CliServer> {
-  const info = await waitForServerInfo(child, stream)
-  const sessionId = info.sessionId ?? (await fetchFallbackSessionId(info.origin))
-  return { child, origin: info.origin, sessionId }
+  const origin = await waitForServerOrigin(child, stream)
+  const sessionId = await openSessionId(origin, filePath)
+  return { child, origin, sessionId }
 }
 
-async function fetchFallbackSessionId(origin: string): Promise<string> {
-  const res = await fetch(`${origin}/api/session`)
-  if (!res.ok) throw new Error(`GET /api/session failed: ${res.status}`)
-  const body = (await res.json()) as { id?: string }
-  if (!body.id) throw new Error('session response missing id')
-  return body.id
+async function openSessionId(origin: string, filePath: string): Promise<string> {
+  const res = await fetch(`${origin}/api/sessions/open`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filePath }),
+  })
+  if (!res.ok) throw new Error(`POST /api/sessions/open failed: ${res.status}`)
+  const body = (await res.json()) as { sessionId?: string }
+  if (!body.sessionId) throw new Error('open response missing sessionId')
+  return body.sessionId
 }
 
-function waitForServerInfo(
+function waitForServerOrigin(
   child: ChildProcessWithoutNullStreams,
   stream: 'stdout' | 'stderr',
-): Promise<{ origin: string; sessionId?: string }> {
+): Promise<string> {
   return new Promise((resolvePromise, reject) => {
     let buffer = ''
     const timer = setTimeout(() => reject(new Error('timed out waiting for server URL')), 10_000)
     const onData = (chunk: Buffer): void => {
       buffer += chunk.toString('utf8')
-      // Reuse CLIs print the `/s/<id>` session URL; fresh CLIs print the `/next/` panel URL.
-      const sessionMatch = buffer.match(/http:\/\/(?:127\.0\.0\.1|localhost):\d+\/s\/([^\s]+)/)
-      if (sessionMatch) {
-        clearTimeout(timer)
-        child[stream].off('data', onData)
-        resolvePromise({ origin: new URL(sessionMatch[0]).origin, sessionId: sessionMatch[1] })
-        return
-      }
+      // Fresh CLIs print `/next/`; reuse CLIs print `/next/?doc=<path>`.
       const panelMatch = buffer.match(/(http:\/\/(?:127\.0\.0\.1|localhost):\d+)\/next\//)
       if (panelMatch) {
         clearTimeout(timer)
         child[stream].off('data', onData)
-        resolvePromise({ origin: panelMatch[1] })
+        resolvePromise(panelMatch[1])
       }
     }
     child[stream].on('data', onData)

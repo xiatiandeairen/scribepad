@@ -4,7 +4,7 @@
  *
  * `scribepad <path-to-markdown>` opens a document session on the project-local
  * scribepad server. If the server is already running, this process reuses it
- * and exits after printing the session URL.
+ * and exits after printing the document's `/next` panel URL.
  */
 import { serve } from '@hono/node-server'
 import { execFile } from 'node:child_process'

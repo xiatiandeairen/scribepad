@@ -144,7 +144,7 @@ export class SessionManager {
     const existing = existingId ? this.sessions.get(existingId) : undefined
     if (existing && existing.status !== 'closed') {
       this.touch(existing)
-      return { sessionId: existing.id, url: this.sessionUrl(existing.id) }
+      return { sessionId: existing.id, url: this.docPanelUrl(absolutePath) }
     }
 
     const now = this.now().toISOString()
@@ -166,7 +166,7 @@ export class SessionManager {
     this.fallbackSessionId ??= id
     this.hasEverHadActiveSession = true
     this.lastActivityAt = now
-    return { sessionId: id, url: this.sessionUrl(id) }
+    return { sessionId: id, url: this.docPanelUrl(absolutePath) }
   }
 
   getFallbackSession(): DocumentSession {
@@ -461,8 +461,16 @@ export class SessionManager {
     this.lastActivityAt = now
   }
 
-  private sessionUrl(id: string): string {
-    return `${this.baseUrl()}/s/${encodeURIComponent(id)}`
+  /**
+   * Human-clickable panel URL that reopens `filePath` on the shared server. The
+   * retired React SPA owned `/s/:id`; the live entry point is `/next`, where
+   * `?doc=<path>` overrides the server's default document (plan-app.jsx bootstrap
+   * feeds the value straight to POST /api/sessions/open). The absolute path — not
+   * a basename — is encoded so the round-trip resolves the same session
+   * regardless of the reader's cwd.
+   */
+  private docPanelUrl(filePath: string): string {
+    return `${this.baseUrl()}/next/?doc=${encodeURIComponent(filePath)}`
   }
 
   private resolveDoneWaiters(id: string, result: DoneResult): void {

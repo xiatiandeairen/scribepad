@@ -53,8 +53,9 @@ describe('SessionManager', () => {
     const second = manager.openSession(b)
 
     expect(first.sessionId).not.toBe(second.sessionId)
-    expect(first.url).toContain('/s/')
-    expect(second.url).toContain('/s/')
+    // url is the `/next/?doc=<path>` panel URL, keyed by document (not session id).
+    expect(first.url).toBe(`http://127.0.0.1:3000/next/?doc=${encodeURIComponent(a)}`)
+    expect(second.url).toBe(`http://127.0.0.1:3000/next/?doc=${encodeURIComponent(b)}`)
     await expect(manager.readFile(first.sessionId)).resolves.toMatchObject({ content: '# A\n' })
     await expect(manager.readFile(second.sessionId)).resolves.toMatchObject({ content: '# B\n' })
   })
