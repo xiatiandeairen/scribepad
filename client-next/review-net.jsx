@@ -144,6 +144,13 @@ function deliverTransition(state, event){
    dom / consoleErrors 做大小上限，避免现场快照打爆请求体。 */
 const FEEDBACK_DOM_MAX=20000;        /* outerHTML 截断上限（字符）——只截审阅内容主容器，超限截断 */
 const FEEDBACK_CONSOLE_MAX=20;       /* 只上报最近 N 条 console 错误 */
+/* slice(0,n) 可能切在代理对中间（高位在 n-1、低位在 n），留下孤立的高位代理——
+   往回退一位，避免产出非法的半个 UTF-16 代理对。 */
+function truncateAtCharBoundary(str,max){
+  const code=str.charCodeAt(max-1);
+  const end=(code>=0xd800&&code<=0xdbff)?max-1:max;
+  return str.slice(0,end);
+}
 function buildFeedbackPayload(text, category, sessionId, domSnapshot, consoleErrors, viewport, activeSection){
   const t=String(text||'').trim();
   if(!t) throw new Error('反馈内容不能为空');
@@ -153,7 +160,7 @@ function buildFeedbackPayload(text, category, sessionId, domSnapshot, consoleErr
   if(sessionId) payload.sessionId=sessionId;
   if(typeof domSnapshot==='string'&&domSnapshot.length){
     payload.dom=domSnapshot.length>FEEDBACK_DOM_MAX
-      ? domSnapshot.slice(0,FEEDBACK_DOM_MAX)+'…[truncated]'
+      ? truncateAtCharBoundary(domSnapshot,FEEDBACK_DOM_MAX)+'…[truncated]'
       : domSnapshot;
   }
   if(Array.isArray(consoleErrors)&&consoleErrors.length){

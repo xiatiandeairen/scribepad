@@ -116,6 +116,20 @@ describe('buildFeedbackPayload — size caps', () => {
     expect(payload.dom!.startsWith('a')).toBe(true)
   })
 
+  it('does not split a surrogate pair sitting exactly at the truncation boundary', () => {
+    const emoji = '🎯' // a 2-code-unit astral character
+    const padding = 'a'.repeat(net.FEEDBACK_DOM_MAX - 1)
+    // Places the emoji's high surrogate at index FEEDBACK_DOM_MAX - 1, its low
+    // surrogate at FEEDBACK_DOM_MAX — exactly straddling a naive slice(0, MAX).
+    const huge = padding + emoji + 'a'.repeat(5000)
+    const payload = net.buildFeedbackPayload('t', undefined, undefined, huge)
+    const truncated = payload.dom!.replace(/…\[truncated\]$/, '')
+    // A lone surrogate (U+D800–U+DFFF unpaired) must never appear at the cut
+    // point — either both units of the pair are kept, or neither.
+    const lastCode = truncated.charCodeAt(truncated.length - 1)
+    expect(lastCode >= 0xd800 && lastCode <= 0xdbff).toBe(false)
+  })
+
   it('keeps a dom snapshot under the cap intact', () => {
     const small = '<section>ok</section>'
     const payload = net.buildFeedbackPayload('t', undefined, undefined, small)
