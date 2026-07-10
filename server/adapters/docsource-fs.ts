@@ -4,15 +4,25 @@
  * Adapts fs.readFile / fs.writeFile to the DocSource interface. docId is the
  * absolute file path. Never throws — all errors return Err.
  */
-import { readFile, writeFile } from 'node:fs/promises'
+import { access, readFile, writeFile } from 'node:fs/promises'
 import type { DocContent, DocError, DocSource } from '../../types/ports.js'
 import type { Result } from '../../types/result.js'
 import { ok, err } from '../../core/result.js'
 
 export function createFsDocSource(): DocSource {
   return {
+    exists,
     read,
     write,
+  }
+}
+
+async function exists(docId: string): Promise<boolean> {
+  try {
+    await access(docId)
+    return true
+  } catch {
+    return false
   }
 }
 

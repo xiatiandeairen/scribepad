@@ -12,7 +12,7 @@ import {
 import { docIdFor, documentStatePath, exportPathFor, repoIdFor } from '../../server/paths'
 import { extract } from '../../core/extract/index.js'
 import type { Signoff } from '../../types/domain.js'
-import type { ExportSink, LlmRunner } from '../../types/ports.js'
+import type { DocSource, ExportSink, LlmRunner } from '../../types/ports.js'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 function readFixture(name: string): string {
@@ -160,6 +160,32 @@ describe('SessionManager', () => {
     expect(exportCalls).toEqual([{ outputPath: expectedPath, content: '# Plan\n\nApproved.\n' }])
     // …and nothing was written straight to disk (the fake sink holds it in memory).
     expect(existsSync(expectedPath)).toBe(false)
+  })
+
+  it('checks existence via DocSource.exists, not a full read', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'scribepad-exists-'))
+    const filePath = join(dir, 'plan.md')
+    await writeFile(filePath, '# Plan\n\nApproved.\n', 'utf8')
+
+    // A fake DocSource whose read() would fail the test if ever called for an
+    // existence check — openSession should only need a cheap exists() probe,
+    // not the full file content.
+    const calls: string[] = []
+    const fakeDocSource: DocSource = {
+      exists: async (docId) => {
+        calls.push('exists')
+        return docId === filePath
+      },
+      read: async () => {
+        calls.push('read')
+        throw new Error('read() should not be called just to check existence')
+      },
+    }
+
+    const manager = new SessionManager({ repoRoot: dir, docSource: fakeDocSource })
+    await manager.openSession(filePath)
+
+    expect(calls).toEqual(['exists'])
   })
 
   it('waitForDone resolves when the session is done', async () => {

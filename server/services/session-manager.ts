@@ -146,14 +146,9 @@ export class SessionManager {
   async openSession(filePath: string): Promise<{ sessionId: string; url: string }> {
     const absolutePath = resolve(filePath)
     // Existence check goes through the DocSource port (a read-only / remote
-    // source has no local file to stat): a not-found read means "no such
-    // document"; any other read fault surfaces its own message.
-    const read = await this.docSource.read(absolutePath)
-    if (!read.ok) {
-      if (read.error.kind === 'not-found') {
-        throw new Error(`File not found: ${absolutePath}`)
-      }
-      throw new Error(read.error.message)
+    // source has no local file to stat) without paying for the full content.
+    if (!(await this.docSource.exists(absolutePath))) {
+      throw new Error(`File not found: ${absolutePath}`)
     }
 
     const existingId = this.sessionsByPath.get(absolutePath)

@@ -80,6 +80,7 @@ export interface DocError {
  * is mutable (standalone fs), absent for a read-only integration source.
  */
 export interface DocSource {
+  exists(docId: string): Promise<boolean>
   read(docId: string): Promise<Result<DocContent, DocError>>
   write?(docId: string, content: string): Promise<Result<void, DocError>>
 }
