@@ -49,7 +49,7 @@ test.describe('/next served by the production Hono server', () => {
     await rm(server.tmp, { recursive: true, force: true })
   })
 
-  for (const doc of ['plan-data-backend.md', 'plan-auth-soc2.md']) {
+  for (const doc of ['plan-data-backend.md', 'tests/fixtures/plan-auth-soc2.md']) {
     test(`renders all 8 sections with no console error: ${doc}`, async ({ browser }) => {
       test.setTimeout(45_000)
       const context = await browser.newContext()
@@ -91,7 +91,7 @@ async function startServer(): Promise<Server> {
   const tmp = await mkdtemp(join(tmpdir(), 'scribepad-next-e2e-'))
   // PORT set (any truthy value) => non-session mode: no registry write, no idle
   // shutdown timer, server stays up until killed. PORT=0 => OS-assigned free port
-  // (no fixed-port collisions with the Vite webServer or a parallel session test).
+  // (no fixed-port collisions with a parallel session test).
   const child = spawn(process.execPath, [SERVER_ENTRY, 'plan-data-backend.md'], {
     cwd: REPO_ROOT,
     env: {
