@@ -42,8 +42,10 @@ core/
 ├── annotation-state.ts   # 批注生命周期状态机(纯函数)
 ├── rewrite.ts            # rewriteItems(注入 LlmRunner) + applyRewrites(源码 splice + 漂移守卫)
 ├── section-insert.ts     # 定位新条目插入点 + 下一个稳定 label(D/R/Q)
-├── extract/              # markdown → ExtractResult(8 节结构事实)
-│   ├── index.ts          # extract():分节 → points + decisions + meta
+├── extract/              # markdown → ExtractResult(plan 8 节 / review 5 节,按 docKind 分派)
+│   ├── index.ts          # extract():detectDocKind 分派 → review 走 extractReview,否则原 8 节路径
+│   ├── review.ts         # docKind 判定(detectDocKind)+ review 文档抽取(extractReview):
+│   │                       裁决/对账/声明/遗留/明细五节 → ReviewExtract,degrade 不 throw
 │   ├── sections.ts       # H2 分节 + 8 InfoKind 分类
 │   ├── points.ts         # 非决策节 → ExtractedItem(cells / group / ordinal)
 │   ├── decisions.ts      # 决策节 → DecisionCard(chosen / pick / question / core / cost / facts)
@@ -62,7 +64,7 @@ core/
 
 **核心能力**:
 
-- **extract** — markdown → 8 节结构事实。每个信息点带 `kind` / `label?` / `refs` / `anchor?` / `role`,并保留结构事实 `cells`(GFM 表格逐列)、`group`(粗体子组 / H3)、`ordinal`(有序序号);决策节另出 `DecisionCard`(chosen / pick / question / core / cost / facts);文档级出 `meta`(H1 + 引言 blockquote)。degrade 而不 throw。
+- **extract** — markdown → 8 节结构事实。每个信息点带 `kind` / `label?` / `refs` / `anchor?` / `role`,并保留结构事实 `cells`(GFM 表格逐列)、`group`(粗体子组 / H3)、`ordinal`(有序序号);决策节另出 `DecisionCard`(chosen / pick / question / core / cost / facts);文档级出 `meta`(H1 + 引言 blockquote)。degrade 而不 throw。`detectDocKind` 额外判定文档种类(H1 以 `Review:` 开头,或 review 专属节名命中 ≥2 个 ⇒ `'review'`;否则 `'plan'`):review 文档改走 `extractReview` 产出五节 `ReviewExtract`(裁决 / 计划对账 / 声明与证据 / 遗留与假设 / 变更明细,见 `docs/review-template.md`),`points`/`decisions` 留空;plan 路径的输出与判定逻辑本身完全不变 —— `docKind` 缺省即 `'plan'`,老消费方零行为变化。
 - **verify** — 在 extract 结果上跑 v2 四层模型(L1 presence / L2 form / L3 graph;L4 = 机制 + 置信度贯穿全程)出 `Problem[]`。本期只发确定性规则(mechanism='rule');AI 半边(LlmJudge)是留好的 seam,接入后其 findings 经引文校验 + severity 推导,永不产生 blocker。
 - **grounding** — 稳定标签 `^[GDRPQB]\d+$`(G 目标闸 / D 决策 / R 风险 / P 前置 / Q 待确认;B = 目标节里的已核实 bug),扫描引用图并支持按标签导航;`S`/`A`/`§` 是前端由 ordinal 派生的伪标签,不是后端标签。
 
@@ -120,6 +122,8 @@ types/   ports.ts · domain.ts · verify.ts · annotation.ts · api.ts · result
 
 无构建 React 面板:浏览器直接加载 React UMD + Babel standalone,server 把目录挂在 `/next/*`。各 `.jsx` 不进 tsc、不打包;只在运行时消费 `types/api.ts` 定义的 HTTP 契约(sessions-scoped)。模块职责与加载顺序见 `client-next/接入说明.md`。
 
+`review-net.jsx`(数据加载)/ `review-doc.jsx`(文档壳层)/ `review-right.jsx`(右栏)三处都按 `ExtractResult.docKind` 分派:`'review'` 时改走 `report-contract.jsx`(`buildReportModel` 把 `ReviewExtract` 转成渲染层用的 `REPORT_MODEL`)+ `report-sections.jsx`(`ReportDocView` / `ReportRightPanel`,五节 + 裁决进度右栏),是 plan 路径 `review-contract.jsx` / `review-sections.jsx` 的对照件;plan 文档(`docKind` 缺省)三处都走原分支不变。
+
 ## HTTP 面
 
 **sessions-scoped 路由族(`routes/sessions.ts`,主面)**:
@@ -171,7 +175,7 @@ scribepad feedback "<text>"
 - `<repoId>/exports/<docId>/latest.agent.md` — 核准文档导出产物
 - `feedback/inbox.jsonl` — 中央反馈入口(面板与 CLI 汇聚，不分 repo)；`feedback/attachments/<id>/` 存同步的文档快照与上下文
 
-`repoId` / `docId` 是 `repoRoot` / (`repoRoot`, `docPath`) 的哈希(`server/paths.ts`),故文档存放位置与被审阅项目 repo 是否为其祖先目录无关 —— 这也是 P1 约定 plan 文档可以放到 `$XDG_STATE_HOME/scribepad/plans/...`(在被审阅 repo 之外)仍然正常工作的原因。
+`repoId` / `docId` 是 `repoRoot` / (`repoRoot`, `docPath`) 的哈希(`server/paths.ts`),故文档存放位置与被审阅项目 repo 是否为其祖先目录无关 —— 这也是 P1 约定 plan 文档可以放到 `$XDG_STATE_HOME/scribepad/plans/...`(在被审阅 repo 之外)仍然正常工作的原因。同一约定下,交付审阅报告存到 `$XDG_STATE_HOME/scribepad/reviews/<repo 路径编码>/<yyyymmdd>-<topic>.md`(与 `plans/` 同构的路径编码,详见 `docs/review-template.md` §生成与存放);这两个目录是外部产出物的存放约定,不经 `server/paths.ts` 的 repoId/docId 哈希。
 
 ## Dependency Rules
 
