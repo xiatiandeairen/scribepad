@@ -1,9 +1,14 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { extract } from '../../core/extract/index.js'
 import { chatTask, runChatTask } from '../../core/agent/tasks/chat.js'
 import type { LlmRunner } from '../../types/ports.js'
 import type { Result } from '../../types/result.js'
 import type { LlmError } from '../../types/ports.js'
+
+const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+const readFixture = (name: string): string => readFileSync(repoRoot + name, 'utf8')
 
 // A plan whose 做法 step grounds itself on two goals, so the step's related
 // points are G1 + G2 — used to assert the grounding pack reaches the prompt.
@@ -113,5 +118,73 @@ describe('runChatTask', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('exhausted')
     expect(calls).toBe(2)
+  })
+})
+
+// ── review-doc grounding (docKind: 'review') ─────────────────────────────────
+//
+// extract.points is always [] on a review doc — its units live in
+// extract.review (verdicts/claims/leftovers). Left unguarded, the chat task
+// tells the model there are no jump labels at all, and normalizeAction strips
+// every proposed pt toward D1/C1/L1 as "undefined" even when the model named
+// a real review unit.
+describe('chatTask.buildPrompt — review doc', () => {
+  const reviewSource = readFixture('tests/fixtures/review-standard.md')
+  const reviewEx = extract(reviewSource)
+
+  // The fixed instruction sentence at the prompt's tail always mentions
+  // "可用于跳转的标签" and D1/C1/L1 tokens also appear verbatim inside fullDoc
+  // itself (embedded raw), so a bare `toContain` would pass even when the
+  // whitelist line is empty. Isolate the actual `labelsLine` segment
+  // (`...不得虚构): <labels>`) to assert against the real whitelist content.
+  function labelsLineOf(prompt: string): string {
+    const marker = '不得虚构): '
+    const start = prompt.indexOf(marker)
+    if (start < 0) return ''
+    const end = prompt.indexOf('\n', start)
+    return prompt.slice(start + marker.length, end < 0 ? undefined : end)
+  }
+
+  it('lists review verdict/claim/leftover labels in the jump whitelist', () => {
+    const prompt = chatTask.buildPrompt({
+      fullDoc: reviewSource,
+      extract: reviewEx,
+      text: '概览一下',
+    })
+    const labelsLine = labelsLineOf(prompt)
+    expect(labelsLine).toContain('D1')
+    expect(labelsLine).toContain('C1')
+    expect(labelsLine).toContain('L1')
+  })
+
+  it('grounds a quote that hits a claim in the focused-context block', () => {
+    const prompt = chatTask.buildPrompt({
+      fullDoc: reviewSource,
+      extract: reviewEx,
+      text: '这条声明的证据是什么？',
+      quote: '全部 248 个单测通过',
+    })
+    expect(prompt).toContain('聚焦上下文')
+    const focusStart = prompt.indexOf('聚焦上下文')
+    const focusBlock = prompt.slice(focusStart, prompt.indexOf('可用于跳转的标签'))
+    expect(focusBlock).toContain('C1')
+  })
+})
+
+describe('runChatTask — review doc', () => {
+  const reviewSource = readFixture('tests/fixtures/review-standard.md')
+  const reviewEx = extract(reviewSource)
+
+  it('keeps a pt naming a review verdict label (D1)', async () => {
+    const llm = fakeLlm({
+      ok: true,
+      value: JSON.stringify({
+        paragraphs: ['已核对 D1。'],
+        actions: [{ icon: 'edit', kind: 'edit', title: '跳到 D1', sub: '裁决', pt: 'D1' }],
+      }),
+    })
+    const result = await runChatTask({ fullDoc: reviewSource, extract: reviewEx, text: 'x' }, llm)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value.actions[0]!.pt).toBe('D1')
   })
 })

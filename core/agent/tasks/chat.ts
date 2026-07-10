@@ -19,7 +19,7 @@ import { relatedPoints } from '../../extract/labels.js'
 import type { Result } from '../../../types/result.js'
 import type { LlmRunner } from '../../../types/ports.js'
 import type { AgentAction } from '../../../types/api.js'
-import type { ExtractResult, ExtractedItem } from '../../../types/domain.js'
+import type { ExtractResult, ExtractedItem, ReviewExtract } from '../../../types/domain.js'
 
 export interface ChatTaskInput {
   /** The markdown document, verbatim — the model's read-only context. */
@@ -77,23 +77,76 @@ function describePoint(point: ExtractedItem): string {
   return `- ${head}: ${body}`
 }
 
+/** Every jump-able label a review doc defines — the review-doc counterpart of plan `points` labels. */
+function reviewLabelsOf(review: ReviewExtract): string[] {
+  return [
+    ...review.verdicts.map((v) => v.label),
+    ...review.claims.map((c) => c.label),
+    ...review.leftovers.map((l) => l.label),
+  ].filter((label): label is string => Boolean(label))
+}
+
+/** definedLabels for the jump whitelist: extract.points for a plan doc, review units for a review doc. */
+function definedLabelsOf(extract: ExtractResult): string[] {
+  if (extract.docKind === 'review') return extract.review ? reviewLabelsOf(extract.review) : []
+  return extract.points.map((point) => point.label).filter((label): label is string => Boolean(label))
+}
+
+/** A review unit (verdict/claim/leftover) the quote falls in, with its label and display kind name. */
+interface ReviewFocusUnit {
+  label: string
+  kindName: string
+  text: string
+}
+
+/** The review unit a selection quote falls in, if any — verdict fields, then claim, then leftover text. */
+function findReviewFocusUnit(
+  review: ReviewExtract,
+  quote: string | undefined,
+): ReviewFocusUnit | undefined {
+  if (!quote) return undefined
+  const needle = quote.trim()
+  if (!needle) return undefined
+
+  for (const v of review.verdicts) {
+    const fields = [v.title, v.context, v.chosen, v.alternative, v.whyNotAsked, v.ifRejected, v.evidence]
+    if (fields.some((field) => field !== undefined && field.includes(needle))) {
+      return { label: v.label, kindName: '裁决', text: v.title }
+    }
+  }
+  for (const c of review.claims) {
+    if (c.claim.includes(needle)) return { label: c.label, kindName: '声明', text: c.claim }
+  }
+  for (const l of review.leftovers) {
+    if (l.text.includes(needle)) return { label: l.label, kindName: '遗留', text: l.text }
+  }
+  return undefined
+}
+
+/** The `\n选区命中 …（聚焦上下文）:\n...\n` block, or '' when nothing grounds the quote. */
+function focusBlockOf(extract: ExtractResult, quote: string | undefined): string {
+  if (extract.docKind === 'review') {
+    const unit = extract.review ? findReviewFocusUnit(extract.review, quote) : undefined
+    if (!unit) return ''
+    const body = unit.text.replace(/\s+/g, ' ').trim().slice(0, 80)
+    return `\n选区命中 ${unit.label}（${unit.kindName}，聚焦上下文）:\n- ${unit.label}: ${body}\n`
+  }
+  const focus = findFocusPoint(extract, quote)
+  const related = focus ? relatedPoints(extract, focus.id, 1) : []
+  return focus && related.length > 0
+    ? `\n选区命中 ${focus.label ?? focus.kind}，其依据/被依据点（聚焦上下文）:\n${related
+        .map(describePoint)
+        .join('\n')}\n`
+    : ''
+}
+
 export const chatTask: TaskSpec<ChatTaskInput, ChatReplyRaw> = {
   name: 'chat',
   retry: 1,
   schema: chatReplySchema,
   buildPrompt: ({ fullDoc, extract, text, quote }) => {
-    const focus = findFocusPoint(extract, quote)
-    const related = focus ? relatedPoints(extract, focus.id, 1) : []
-    const definedLabels = extract.points
-      .map((point) => point.label)
-      .filter((label): label is string => Boolean(label))
-
-    const focusBlock =
-      focus && related.length > 0
-        ? `\n选区命中 ${focus.label ?? focus.kind}，其依据/被依据点（聚焦上下文）:\n${related
-            .map(describePoint)
-            .join('\n')}\n`
-        : ''
+    const focusBlock = focusBlockOf(extract, quote)
+    const definedLabels = definedLabelsOf(extract)
 
     const labelsLine =
       definedLabels.length > 0
@@ -126,11 +179,7 @@ export async function runChatTask(
   const result = await runTask(chatTask, input, llm)
   if (!result.ok) return result
 
-  const defined = new Set(
-    input.extract.points
-      .map((point) => point.label)
-      .filter((label): label is string => Boolean(label)),
-  )
+  const defined = new Set(definedLabelsOf(input.extract))
   const actions = result.value.actions.map((raw) => normalizeAction(raw, defined))
   return { ok: true, value: { paragraphs: result.value.paragraphs, actions } }
 }
