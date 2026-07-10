@@ -309,3 +309,8 @@ table.mtx.dtable tr.pick td{background:rgba(51,112,255,.055)}
 .rw-foot .go{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#fff;background:var(--fs-blue);border:none;padding:8px 16px;border-radius:8px;cursor:pointer}
 .rw-foot .go svg{width:14px;height:14px}
 .rw-foot .go:hover{opacity:.9}
+
+/* 面板反馈弹层：分类选中态 + 提交禁用态（复用 rw-modal 结构） */
+.fb-cats button.on{background:rgba(51,112,255,.1);color:var(--fs-blue)}
+.fb-modal .rw-foot .go:disabled{background:var(--border-strong);cursor:default;opacity:.7}
+.fb-modal .rw-foot .go:disabled:hover{opacity:.7}

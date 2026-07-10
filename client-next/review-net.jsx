@@ -138,6 +138,34 @@ function deliverTransition(state, event){
   if(event==='fail') return 'idle';
   return state;
 }
+/* ── 面板反馈：构造 POST /api/feedback 请求体（纯函数，可单测）──
+   text 必填（trim 后为空即抛错——UI 提交前应已拦截，这里是最后防线）；其余字段缺省
+   （空串 / undefined / 空数组）时不出现在 payload 里——后端按字段有无决定是否附加。
+   dom / consoleErrors 做大小上限，避免现场快照打爆请求体。 */
+const FEEDBACK_DOM_MAX=20000;        /* outerHTML 截断上限（字符）——只截审阅内容主容器，超限截断 */
+const FEEDBACK_CONSOLE_MAX=20;       /* 只上报最近 N 条 console 错误 */
+function buildFeedbackPayload(text, category, sessionId, domSnapshot, consoleErrors, viewport, activeSection){
+  const t=String(text||'').trim();
+  if(!t) throw new Error('反馈内容不能为空');
+  const payload={ text:t };
+  const cat=category&&String(category).trim();
+  if(cat) payload.category=cat;
+  if(sessionId) payload.sessionId=sessionId;
+  if(typeof domSnapshot==='string'&&domSnapshot.length){
+    payload.dom=domSnapshot.length>FEEDBACK_DOM_MAX
+      ? domSnapshot.slice(0,FEEDBACK_DOM_MAX)+'…[truncated]'
+      : domSnapshot;
+  }
+  if(Array.isArray(consoleErrors)&&consoleErrors.length){
+    payload.consoleErrors=consoleErrors.slice(-FEEDBACK_CONSOLE_MAX).map(e=>e&&e.message?String(e.message):String(e));
+  }
+  if(viewport) payload.viewport=viewport;
+  if(activeSection) payload.activeSection=activeSection;
+  return payload;
+}
+/* 提交面板反馈：成功返回 { id }（后端 201）；非 2xx 由 fetchJson 抛错。 */
+function postFeedback(payload){ return fetchJson('POST','/api/feedback', payload); }
+
 /* 交付态 + 会话存在性 → 按钮呈现（无会话不可交付；交付中 / 交付后禁用）。 */
 function deliverButton(state, hasSession){
   if(!hasSession) return { disabled:true, done:false, label:'完成审阅 · 交付' };
@@ -152,4 +180,5 @@ Object.assign(window,{
   buildModelFromExtract, applyReviewUpdate, fetchReviewUpdate,
   computeSrcRange, noteToAnnotation, annotationToNote, buildNoteHighlights, toggleSignoff,
   deliverTransition, deliverButton,
+  FEEDBACK_DOM_MAX, FEEDBACK_CONSOLE_MAX, buildFeedbackPayload, postFeedback,
 });

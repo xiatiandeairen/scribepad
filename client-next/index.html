@@ -28,6 +28,9 @@
   </svg>
 </template>
 
+<!-- 早期 console/error 环形缓冲：在 React/Babel 之前同步加载，捕捉渲染前的错误 -->
+<script src="console-buffer.js"></script>
+
 <script src="vendor/react.development.js"></script>
 <script src="vendor/react-dom.development.js"></script>
 <script src="vendor/babel.min.js"></script>
@@ -48,6 +51,7 @@
 <script type="text/babel" src="review-sections.jsx"></script>
 <script type="text/babel" src="review-doc.jsx"></script>
 <script type="text/babel" src="review-right.jsx"></script>
+<script type="text/babel" src="review-feedback.jsx"></script>
 <script type="text/babel" src="review-app.jsx"></script>
 </body>
 </html>

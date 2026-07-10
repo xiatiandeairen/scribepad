@@ -66,6 +66,7 @@ function App({ sessionId, doc }){
   const [selectedNotes,setSelectedNotes]=useState([]);
   const [rwOpen,setRwOpen]=useState(false);
   const [rwQuote,setRwQuote]=useState('');
+  const [fbOpen,setFbOpen]=useState(false);       /* 面板反馈弹层（⌘/Ctrl+Shift+F）*/
   const [,setDocVer]=useState(0);                 /* bump → 重渲染读取刷新后的全局 REVIEW_MODEL */
   const bumpDoc=()=>setDocVer(v=>v+1);
 
@@ -122,6 +123,24 @@ function App({ sessionId, doc }){
     }catch(e){
       setDelivery(d=>deliverTransition(d,'fail'));
       flash('交付失败：'+((e&&e.message)||e));
+    }
+  }
+
+  /* ── 面板反馈：提交时自动打包现场信息（用户只写一句话 + 选分类）──
+     dom 只截审阅内容主容器 #docText 的 outerHTML（buildFeedbackPayload 内再按上限截断），
+     不截整个 body / documentElement，避免打爆请求体。console 从早期环形缓冲读最近 N 条。 */
+  async function submitFeedback(text, category){
+    const docEl=document.getElementById('docText');
+    const dom=docEl?docEl.outerHTML:undefined;
+    const consoleErrors=typeof window.__recentConsoleErrors==='function'?window.__recentConsoleErrors():undefined;
+    const viewport=`${window.innerWidth}x${window.innerHeight}`;
+    const payload=buildFeedbackPayload(text, category, sessionId||undefined, dom, consoleErrors, viewport, activeSec);
+    try{
+      await postFeedback(payload);
+      setFbOpen(false);
+      flash('反馈已提交，谢谢');
+    }catch(e){
+      flash('反馈提交失败：'+((e&&e.message)||e));
     }
   }
 
@@ -265,10 +284,11 @@ function App({ sessionId, doc }){
   useEffect(()=>{
     function onKey(e){
       const meta=e.metaKey||e.ctrlKey;
-      if(meta&&e.key==='k'){e.preventDefault();setCmdk(v=>!v);}
+      if(meta&&e.shiftKey&&(e.key==='F'||e.key==='f')){e.preventDefault();setFbOpen(v=>!v);}
+      else if(meta&&e.key==='k'){e.preventDefault();setCmdk(v=>!v);}
       else if(meta&&e.key==='\\'){e.preventDefault();setChatOpen(v=>!v);}
       else if(meta&&e.key===','){e.preventDefault();setSettingsOpen(v=>!v);}
-      else if(e.key==='Escape'){setTool(null);}
+      else if(e.key==='Escape'){setTool(null);setFbOpen(false);}
     }
     window.addEventListener('keydown',onKey);
     return ()=>window.removeEventListener('keydown',onKey);
@@ -337,6 +357,7 @@ function App({ sessionId, doc }){
         selectedNotes={selectedNotes} onToggleNoteSel={toggleNoteSel} onAnalyzeNotes={analyzeNotes}
         history={history} diffEntry={diffEntry} onShowDiff={showDiff}/>}
 
+      {fbOpen && <FeedbackPopover onClose={()=>setFbOpen(false)} onSubmit={submitFeedback}/>}
       {cmdk && <CmdK cmds={CMDS} onClose={()=>setCmdk(false)} onRun={runCmd}/>}
       {agentOpen && <AgentConfig cfg={agentCfg} onSave={(c)=>{ setAgentCfg(c); flash('Agent 接入已保存'); }} onClose={()=>setAgentOpen(false)}/>}
       {settingsOpen && <SettingsModal s={settings} setS={setSettings} onClose={()=>setSettingsOpen(false)}/>}
