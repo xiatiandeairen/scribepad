@@ -20,7 +20,7 @@
   "scripts": {
     "dev": "npm run dev:server",
     "dev:server": "PORT=3001 tsx watch --include types --include server server/index.ts plan-data-backend.md",
-    "build": "tsc -p tsconfig.server.json",
+    "build": "rm -rf dist && tsc -p tsconfig.server.json",
     "prepare": "npm run build",
     "start": "NODE_ENV=production node dist/server/index.js plan-data-backend.md",
     "test": "vitest run --passWithNoTests",

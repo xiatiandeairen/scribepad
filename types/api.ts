@@ -136,11 +136,6 @@ export interface SessionResponse {
   agentContextPath?: string
 }
 
-// POST /api/session/close
-export interface CloseSessionRequest {
-  exportAgentContext: boolean
-}
-
 export interface OpenSessionRequest {
   filePath: string
 }
