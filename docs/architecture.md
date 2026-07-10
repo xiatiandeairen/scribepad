@@ -71,8 +71,9 @@ core/
 ```
 LlmRunner    run(req) → Result<string, LlmError>        # 跑 agent 任务,返回原始文本
 ReviewStore  load / save(docId, ReviewState)            # 持久化用户状态(不落抽取结果)
-DocSource    read / write?(docId)                       # 供文档内容(write 可选:只读源可省)
+DocSource    exists / read / write?(docId)              # 供文档内容(write 可选:只读源可省)
 ExportSink   export(outputPath, content)                # 导出最终文档为独立产品(与源文档写互相独立)
+FeedbackSink submit(entry, attachment?)                 # 反馈报告的自含式采集,携带可复现上下文
 ```
 
 `ReviewState = { annotations, signoffs }` —— 只存"用户决定了什么",抽取结果从不持久化(每次重算)。ExportSink 将通过核准文档导出到 `outputPath`(独立于源文档是否可写,集成可路由到自己的存储)。
@@ -84,6 +85,7 @@ llm-execa.ts           # 实现 LlmRunner:execa spawn LLM CLI(codex-cli / claude
 store-sidecar.ts       # 实现 ReviewStore:sidecar JSON(工厂注入 repoRoot/env)
 docsource-fs.ts        # 实现 DocSource:文件系统
 export-sink-fs.ts      # 实现 ExportSink:写到 XDG state home(工厂注入 env)
+feedback-sink-fs.ts    # 实现 FeedbackSink:追加到 inbox.jsonl 及可选的 attachments 目录(工厂注入 env)
 ```
 
 **单一 spawn 路径**:全应用只有 `llm-execa` 用 execa。
@@ -97,6 +99,7 @@ server/
 ├── routes/             # HTTP 边界
 │   ├── sessions.ts     # sessions-scoped 路由族(主面,见下)
 │   ├── session.ts      # /api/session 单会话 fallback(CLI one-shot:get,经 getFallbackSession 复用会话中枢)
+│   ├── feedback.ts     # 全局非会话路由:接收面板 / CLI 反馈并做服务端富化
 │   └── ai.ts           # AI 配置 / 状态 / 自测
 └── services/
     ├── session-manager.ts   # 会话中枢:经注入端口做 doc / annotations / signoffs /
@@ -135,7 +138,7 @@ POST /api/sessions/:id/agent                 # 单一 AI 通道(SSE:progress* �
 POST /api/sessions/:id/done                  # 合闸导出;GET .../wait 阻塞到合闸
 ```
 
-**其它**:`GET /api/session`(单会话 fallback,经 `getFallbackSession`)、`/api/ai/{config,status,test}`、`/healthz`,以及 `/next/*` 静态挂载。
+**其它**:`GET /api/session`(单会话 fallback,经 `getFallbackSession`)、`POST /api/feedback`(全局反馈入口)、`/api/ai/{config,status,test}`、`/healthz`,以及 `/next/*` 静态挂载。
 
 ## 数据流
 
@@ -153,9 +156,20 @@ POST /api/sessions/:id/done                  # 合闸导出;GET .../wait 阻塞�
 
 ```
 scribepad <doc> [--open] [--wait]
+scribepad feedback "<text>"
 ```
 
 同一 repo 内共享一台 server(registry 记录 url/pid);再次 `scribepad` 复用存活的 server 并打开新文档会话。`--open` 打开浏览器面板(`/next/`);`--wait` 是 **agent 审阅闸**:进程阻塞到 `POST /api/sessions/:id/done` 合闸,把导出 `outputPath` 打到 stdout(其余日志走 stderr),然后退出。
+
+`scribepad feedback` 子命令提交格式自由的反馈文本到中央 inbox(无会话上下文),用于非交互式反馈采集。
+
+## 数据存储
+
+持久化存储集中在 `$XDG_STATE_HOME/scribepad/`：
+
+- `$docId/state.json` — 用户注解与核准状态(ReviewState)
+- `$docId/export/` — 核准文档导出产物
+- `feedback/inbox.jsonl` — 中央反馈入口(面板与 CLI 汇聚)；`attachments/<id>/` 存同步的文档快照与上下文
 
 ## Dependency Rules
 
