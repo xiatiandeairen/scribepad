@@ -16,18 +16,34 @@ import { gfm } from 'micromark-extension-gfm'
 import type { DecisionCard, DocMeta, ExtractResult, ExtractedItem } from '../../types/domain.js'
 import { extractDecisions } from './decisions.js'
 import { pointsFromSection } from './points.js'
+import { detectDocKind, extractReview } from './review.js'
 import { splitSections } from './sections.js'
 import { compact, textOf } from './text.js'
 
 export { byLabel, relatedPoints } from './labels.js'
+export { detectDocKind, extractReview } from './review.js'
 export { classifySection, splitSections } from './sections.js'
 
-/** Extract points + decision cards from a plan markdown source. */
+/**
+ * Extract a markdown source into an ExtractResult. Dispatches on docKind
+ * (docs/review-template.md §机器识别契约): a review doc yields empty
+ * points/decisions plus the structured `review` field; a plan doc runs the
+ * original 8-section path unchanged — `docKind` stays absent for it, so
+ * every pre-review consumer of points/decisions sees zero behavior change.
+ */
 export function extract(source: string): ExtractResult {
   const tree = fromMarkdown(source, {
     extensions: [gfm()],
     mdastExtensions: [gfmFromMarkdown()],
   })
+  const meta = docMeta(tree)
+
+  if (detectDocKind(tree) === 'review') {
+    const review = extractReview(tree)
+    const result: ExtractResult = { points: [], decisions: [], docKind: 'review', review }
+    if (meta) result.meta = meta
+    return result
+  }
 
   const points: ExtractedItem[] = []
   const decisions: DecisionCard[] = []
@@ -42,7 +58,6 @@ export function extract(source: string): ExtractResult {
     }
   }
 
-  const meta = docMeta(tree)
   return meta ? { points, decisions, meta } : { points, decisions }
 }
 

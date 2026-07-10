@@ -71,7 +71,8 @@ export function classifySection(heading: string): InfoKind | undefined {
   return undefined
 }
 
-function normalizeHeading(text: string): string {
+/** Strip heading noise (leading `#`/ordinal/bullet marks, trailing colon) and lowercase. */
+export function normalizeHeading(text: string): string {
   return text
     .toLowerCase()
     .replace(/^[\s#\d.、-]+/, '')
