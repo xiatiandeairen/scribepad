@@ -12,9 +12,11 @@ import { resolve } from 'node:path'
 import { sessionRoute } from './routes/session.js'
 import { sessionsRoute } from './routes/sessions.js'
 import { aiRoute } from './routes/ai.js'
+import { feedbackRoute } from './routes/feedback.js'
 import type { SessionManager } from './services/session-manager.js'
 import type { ScribepadConfig } from './config.js'
 import type { AiConfig } from '../types/api.js'
+import type { FeedbackSink } from '../types/ports.js'
 
 export interface AppContext {
   sessionManager: SessionManager
@@ -23,6 +25,14 @@ export interface AppContext {
   updateAiConfig: (ai: AiConfig) => Promise<void>
   /** Request graceful shutdown after the current HTTP response is sent. */
   requestClose?: () => void
+  /**
+   * Optional so index.ts (the composition root) isn't forced to wire it up —
+   * the feedback route falls back to the default fs-backed adapter when
+   * absent. Unlike `sessionManager`, feedback has no per-request state to own,
+   * so there's nothing gained by mandating construction at the composition
+   * root instead of lazily inside the route.
+   */
+  feedbackSink?: FeedbackSink
 }
 
 export function createApp(ctx: AppContext) {
@@ -32,6 +42,7 @@ export function createApp(ctx: AppContext) {
   app.route('/api', aiRoute(ctx))
   app.route('/api', sessionRoute(ctx))
   app.route('/api', sessionsRoute(ctx))
+  app.route('/api', feedbackRoute(ctx))
 
   app.get('/healthz', (c) => c.json({ ok: true }))
   app.get('/api/healthz', (c) => c.json({ ok: true }))
