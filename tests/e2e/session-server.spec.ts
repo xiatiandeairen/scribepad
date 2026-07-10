@@ -175,6 +175,48 @@ test.describe('shared production server sessions', () => {
     await postDone(first.origin, first.sessionId)
     await expectProcessExit(first.child, 20_000)
   })
+
+  test('wait mode remounting the same document prints the URL before Done and resumes the live session', async () => {
+    test.setTimeout(45_000)
+
+    // Simulates a Claude Code `--wait` background task getting interrupted and
+    // re-invoked for the *same* file while its session is still open on the
+    // shared server (the server process itself survived the interruption).
+    const tmp = await mkdtemp(join(tmpdir(), 'scribepad-wait-remount-e2e-'))
+    const configPath = join(tmp, 'config.json')
+    const doc = join(tmp, 'remount.md')
+    await writeFile(
+      configPath,
+      JSON.stringify({ activeIdleMs: 10_000, initialIdleMs: 600_000 }),
+      'utf8',
+    )
+    await writeFile(doc, '# Remount Plan\n\nInterrupted then re-invoked.\n', 'utf8')
+
+    const env = makeEnv(tmp, configPath)
+    const first = await startWaitCli(doc, env)
+
+    // Re-invoke `--wait` for the same document without Done-ing the first
+    // session. `startWaitCli` only resolves once the URL line lands on
+    // stderr — if the CLI printed the URL after blocking on Done, this call
+    // would hang until its own 10s timeout since Done is never posted here.
+    const remount = await startWaitCli(doc, env)
+
+    expect(remount.origin).toBe(first.origin)
+    expect(remount.sessionId).toBe(first.sessionId)
+
+    // Both processes are independently blocked on the same session's Done gate.
+    const firstExited = waitForStdoutOnExit(first.child, 20_000)
+    const remountExited = waitForStdoutOnExit(remount.child, 20_000)
+    const outputPath = await postDone(first.origin, first.sessionId)
+    const [firstStdout, remountStdout] = await Promise.all([firstExited, remountExited])
+
+    expect(firstStdout).toBe(`${outputPath}\n`)
+    expect(remountStdout).toBe(`${outputPath}\n`)
+    expect(outputPath).toBe(agentPathFor(doc, env))
+    await expect(readFile(outputPath, 'utf8')).resolves.toBe(
+      '# Remount Plan\n\nInterrupted then re-invoked.\n',
+    )
+  })
 })
 
 function makeEnv(tmp: string, configPath: string): Record<string, string> {
