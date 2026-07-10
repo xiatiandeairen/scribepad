@@ -167,9 +167,11 @@ scribepad feedback "<text>"
 
 持久化存储集中在 `$XDG_STATE_HOME/scribepad/`：
 
-- `$docId/state.json` — 用户注解与核准状态(ReviewState)
-- `$docId/export/` — 核准文档导出产物
-- `feedback/inbox.jsonl` — 中央反馈入口(面板与 CLI 汇聚)；`attachments/<id>/` 存同步的文档快照与上下文
+- `<repoId>/documents/<docId>.json` — 用户注解与核准状态(ReviewState)
+- `<repoId>/exports/<docId>/latest.agent.md` — 核准文档导出产物
+- `feedback/inbox.jsonl` — 中央反馈入口(面板与 CLI 汇聚，不分 repo)；`feedback/attachments/<id>/` 存同步的文档快照与上下文
+
+`repoId` / `docId` 是 `repoRoot` / (`repoRoot`, `docPath`) 的哈希(`server/paths.ts`),故文档存放位置与被审阅项目 repo 是否为其祖先目录无关 —— 这也是 P1 约定 plan 文档可以放到 `$XDG_STATE_HOME/scribepad/plans/...`(在被审阅 repo 之外)仍然正常工作的原因。
 
 ## Dependency Rules
 
