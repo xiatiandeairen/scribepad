@@ -307,7 +307,7 @@ function App({ sessionId, doc }){
         <div className="tb-logo"><span className="mark">{I.sparkF}</span>Spec</div>
         <div className="tb-div"></div>
         <div className="tb-crumb"><span className="proj">{REVIEW_MODEL.meta.project}</span><span className="sep">/</span><span>docs / {REVIEW_MODEL.meta.file}</span></div>
-        <div className="savepill" data-st={saveState}><span className="d"></span>{saveLabel} · {REVIEW_MODEL.meta.status}</div>
+        <div className="savepill" data-st={saveState}><span className="d"></span>{saveLabel}{REVIEW_MODEL.meta.status?` · ${REVIEW_MODEL.meta.status}`:''}</div>
         <button className={`tb-btn tb-refresh${spin?' spin':''}`} title="同步 / 刷新" onClick={refresh}>{I.refresh}</button>
         <button className={`tb-deliver${deliverBtn.done?' done':''}`} title="完成审阅并把批准稿交付给 --wait 的 agent"
           disabled={deliverBtn.disabled} onClick={onDeliver}>{I.check}<span className="an">{deliverBtn.label}</span></button>

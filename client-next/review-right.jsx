@@ -117,6 +117,8 @@ function RightPanel({ tab, setTab, scrollTo, signed, seenSecs,
                       notes, onResolveNote, onUpdateNote, onFocusNote, pulseNoteId,
                       selectedNotes, onToggleNoteSel, onAnalyzeNotes,
                       history, diffEntry, onShowDiff }){
+  /* docKind:'review' → 最小右栏（裁决进度 + 图例）；plan 走下方三 tab 面板不变。 */
+  if(REVIEW_MODEL.docKind==='review') return <ReportRightPanel signed={signed}/>;
   const openNotes=notes.filter(n=>n.status!=='done').length;
   return (
     <aside className="rightbar">

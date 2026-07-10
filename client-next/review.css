@@ -314,3 +314,131 @@ table.mtx.dtable tr.pick td{background:rgba(51,112,255,.055)}
 .fb-cats button.on{background:rgba(51,112,255,.1);color:var(--fs-blue)}
 .fb-modal .rw-foot .go:disabled{background:var(--border-strong);cursor:default;opacity:.7}
 .fb-modal .rw-foot .go:disabled:hover{opacity:.7}
+
+/* ════════════════════════════════════════════════════════════════════
+   交付审阅报告（docKind:'review'）· report-sections.jsx 专属
+   复用上方 --fs-* 令牌（已含深浅色两套），新类一律 rpt- 前缀避免撞名。
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── 文档头：kind 标签 / meta 芯片 / plan 路径 / 门禁 / 复核 / 建议路径 ── */
+.rpt-flag .tag.rpt-kindtag{background:rgba(51,112,255,.1);color:var(--fs-blue);font-weight:600}
+.rpt-meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin:0 0 8px;font-size:12.5px;color:var(--fs-t3)}
+.rpt-meta .rpt-m{display:inline-flex;align-items:baseline;gap:6px}
+.rpt-meta .rpt-m i{font-style:normal;font-size:11px;color:var(--fs-t4);font-weight:500}
+.rpt-meta .rpt-m code{font-family:var(--mono);font-size:12px;color:var(--fs-t2)}
+.rpt-meta .rpt-m em{font-style:normal;font-size:11px;color:var(--fs-t4)}
+.rpt-plan{display:flex;align-items:baseline;gap:7px;margin:0 0 12px;font-size:11.5px;min-width:0}
+.rpt-plan i{font-style:normal;font-size:11px;color:var(--fs-t4);font-weight:500;flex:none}
+.rpt-plan code{font-family:var(--mono);font-size:11px;color:var(--fs-t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.rpt-gates{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px}
+.rpt-gate{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:500;border-radius:5px;padding:2px 9px;line-height:1.7;white-space:nowrap}
+.rpt-gate.ok{color:var(--fs-green);background:var(--fs-green-bg)}
+.rpt-gate.bad{color:var(--fs-red);background:var(--fs-red-bg)}
+.rpt-verify{margin:0 0 12px}
+.rpt-reading{display:flex;align-items:baseline;gap:8px;margin:0 0 26px;padding:8px 12px;background:var(--fs-gray);border-radius:8px;font-size:12.5px;color:var(--fs-t3);line-height:1.6}
+.rpt-reading i{font-style:normal;font-size:11px;color:var(--fs-t4);font-weight:600;flex:none}
+
+/* ── 复制命令芯片（复核命令 + 声明核验方式共用）── */
+.rpt-cmd{display:inline-flex;align-items:center;gap:8px;max-width:100%;background:var(--fs-gray);border:1px solid var(--fs-border);border-radius:7px;padding:4px 4px 4px 10px;cursor:pointer;transition:.13s;text-align:left}
+.rpt-cmd.block{display:flex;width:100%}
+.rpt-cmd:hover{border-color:var(--fs-blue)}
+.rpt-cmd code{font-family:var(--mono);font-size:12px;color:var(--fs-t2);line-height:1.5;overflow-x:auto;white-space:nowrap;flex:1;min-width:0}
+.rpt-cmd .rpt-copy{display:inline-flex;align-items:center;gap:3px;flex:none;font-size:10.5px;font-weight:500;color:var(--fs-t3);background:var(--surface);border-radius:5px;padding:2px 7px}
+.rpt-cmd .rpt-copy svg{width:11px;height:11px}
+.rpt-cmd:hover .rpt-copy{color:var(--fs-blue)}
+
+/* ── 节头徽标 ── */
+.rpt-sec-h .rpt-badge{margin-left:8px;font-size:11px;font-weight:500;color:var(--fs-t4);background:var(--fs-gray);border-radius:4px;padding:1px 8px}
+
+/* ── §1 裁决卡 ── */
+.rpt-verdicts{margin:0 0 22px;display:flex;flex-direction:column;gap:12px}
+.rpt-vcard{border:1px solid var(--fs-border);border-radius:10px;padding:14px 16px;background:var(--surface);scroll-margin-top:90px;transition:border-color .14s}
+.rpt-vcard.signed{border-color:var(--fs-green);background:var(--fs-green-bg)}
+.rpt-vcard.signed .rpt-fields{background:transparent}
+.rpt-vhead{display:flex;align-items:center;gap:9px;margin-bottom:11px;flex-wrap:wrap}
+.rpt-vhead .rpt-lbl{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--fs-blue);flex:none}
+.rpt-vhead .rpt-vtitle{flex:1;min-width:140px;font-size:14.5px;font-weight:600;color:var(--text);line-height:1.5}
+.rpt-tag{flex:none;font-size:11px;font-weight:500;border-radius:4px;padding:1px 8px;line-height:1.7;white-space:nowrap}
+.rpt-tag.r{color:var(--fs-red);background:var(--fs-red-bg)}
+.rpt-tag.p{color:var(--fs-blue);background:rgba(51,112,255,.1)}
+.rpt-tag.d{color:var(--accent);background:var(--accent-soft)}
+.rpt-tag.q{color:var(--fs-orange);background:var(--fs-orange-bg)}
+.rpt-tag.g{color:var(--fs-green);background:var(--fs-green-bg)}
+[data-theme="dark"] .rpt-tag.p{background:rgba(106,148,255,.16)}
+.rpt-sign{flex:none;height:27px;padding:0 13px;border-radius:7px;border:1px solid var(--fs-border);font-size:12px;font-weight:500;color:var(--fs-t2);display:inline-flex;align-items:center;gap:5px;background:var(--surface);cursor:pointer;transition:.14s}
+.rpt-sign svg{width:12px;height:12px}
+.rpt-sign:hover{border-color:var(--fs-blue);color:var(--fs-blue)}
+.rpt-sign.ok{background:var(--fs-green-bg);border-color:transparent;color:var(--fs-green)}
+.rpt-fields{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;background:var(--fs-block);border-radius:8px;padding:11px 14px}
+.rpt-field{display:contents}
+.rpt-field .rpt-fl{font-size:12.5px;color:var(--fs-t4);font-weight:400;white-space:nowrap;padding-top:1px}
+.rpt-field .rpt-fv{font-size:13px;color:var(--text);line-height:1.66}
+.rpt-field.warn .rpt-fl{color:var(--fs-orange);font-weight:600}
+.rpt-field.warn .rpt-fv{color:var(--fs-orange)}
+.rpt-field .rpt-ev{font-family:var(--mono);font-size:12px;color:var(--fs-t3);line-height:1.6;word-break:break-word}
+
+/* ── §1 空态占位卡 ── */
+.rpt-empty-card{border:1px dashed var(--fs-border);border-radius:10px;padding:20px 16px;margin:0 0 22px;text-align:center;font-size:13px;color:var(--fs-t4);background:var(--fs-gray)}
+.rpt-empty-line{font-size:13px;color:var(--fs-t4);margin:0 0 20px}
+
+/* ── §2 / §3 表格（复用 .tbl-wrap table.mtx）── */
+.rpt-tbl td{vertical-align:middle}
+.rpt-pill{display:inline-block;font-size:11.5px;font-weight:500;border-radius:4px;padding:1px 8px;line-height:1.6;white-space:nowrap}
+.rpt-pill.ok{color:var(--fs-green);background:var(--fs-green-bg)}
+.rpt-pill.warn{color:var(--fs-orange);background:var(--fs-orange-bg)}
+.rpt-pill.bad{color:var(--fs-red);background:var(--fs-red-bg)}
+.rpt-pill.add{color:var(--accent);background:var(--accent-soft)}
+.rpt-pill.na{color:var(--fs-t3);background:var(--fs-gray)}
+.rpt-note{color:var(--text)}
+.rpt-dim{color:var(--fs-t4)}
+.rpt-refs{display:inline-flex;flex-wrap:wrap;gap:5px;margin-left:7px;vertical-align:baseline}
+.rpt-ref{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--fs-blue);background:rgba(51,112,255,.08);border:none;border-radius:4px;padding:1px 6px;cursor:pointer;transition:.12s}
+.rpt-ref:hover{background:rgba(51,112,255,.18)}
+[data-theme="dark"] .rpt-ref{background:rgba(106,148,255,.14)}
+
+/* ── §3 声明表：未核验行黄底 + ⚠ 芯片 ── */
+.rpt-claims .rpt-clbl{font-family:var(--mono);font-weight:600;color:var(--fs-t3)}
+.rpt-claims tr.rpt-unv td{background:var(--fs-orange-bg)}
+.rpt-warnchip{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:500;color:var(--fs-orange);background:var(--surface);border-radius:4px;padding:1px 8px;white-space:nowrap}
+[data-theme="dark"] .rpt-claims tr.rpt-unv td{background:rgba(212,162,74,.14)}
+
+/* ── §4 遗留行 ── */
+.rpt-leftovers{margin:0 0 22px}
+.rpt-lrow{padding:11px 0;border-bottom:1px solid var(--border-hair);scroll-margin-top:90px}
+.rpt-lrow:last-child{border-bottom:none}
+.rpt-lmain{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.rpt-lrow .rpt-lbl{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--fs-t3);flex:none}
+.rpt-kind{flex:none;font-size:11px;font-weight:500;border-radius:4px;padding:1px 8px;white-space:nowrap}
+.rpt-kind.deferred{color:var(--fs-blue);background:rgba(51,112,255,.1)}
+.rpt-kind.assumption{color:var(--fs-orange);background:var(--fs-orange-bg)}
+.rpt-kind.limitation{color:var(--fs-t3);background:var(--fs-gray)}
+.rpt-kind.unknown{color:var(--fs-t4);background:var(--fs-gray)}
+[data-theme="dark"] .rpt-kind.deferred{background:rgba(106,148,255,.16)}
+.rpt-lrow .rpt-ltext{flex:1;min-width:140px;font-size:13.5px;color:var(--text);line-height:1.6}
+.rpt-lrow.signed .rpt-ltext{color:var(--fs-t3)}
+.rpt-lcond{margin:5px 0 0 0;font-size:12px;color:var(--fs-t4);line-height:1.6}
+.rpt-lcond b{font-weight:600;color:var(--fs-t3);margin-right:6px}
+
+/* ── §5 变更明细（折叠）── */
+.rpt-details{margin:0 0 22px;border:1px solid var(--fs-border);border-radius:9px;overflow:hidden}
+.rpt-dsum{list-style:none;cursor:pointer;padding:11px 14px;font-size:13px;font-weight:500;color:var(--fs-t2);background:var(--fs-gray);user-select:none}
+.rpt-dsum::-webkit-details-marker{display:none}
+.rpt-dsum::before{content:"▸";margin-right:8px;color:var(--fs-t4);font-size:11px}
+.rpt-details[open] .rpt-dsum::before{content:"▾"}
+.rpt-dlist{list-style:none;margin:0;padding:8px 14px 12px}
+.rpt-dlist li{font-family:var(--mono);font-size:11.5px;color:var(--fs-t3);line-height:1.55;padding:4px 0;border-bottom:1px solid var(--border-hair);word-break:break-word}
+.rpt-dlist li:last-child{border-bottom:none}
+
+/* ── 右栏最小面板：裁决进度 + 图例 ── */
+.rpt-rp{padding:0}
+.rpt-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:2px}
+.rpt-schip{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 11px;border-radius:8px;border:1px solid var(--fs-border);background:var(--surface);font-family:var(--mono);font-size:12px;font-weight:600;color:var(--fs-t3);cursor:pointer;transition:.13s}
+.rpt-schip:hover{border-color:var(--fs-blue);color:var(--fs-blue)}
+.rpt-schip.on{background:var(--fs-green-bg);border-color:transparent;color:var(--fs-green)}
+.rpt-schip svg{width:13px;height:13px}
+.rpt-legend{display:flex;flex-direction:column;gap:8px}
+.rpt-legend span{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--fs-t3)}
+.rpt-lg{width:22px;height:22px;border-radius:6px;display:inline-grid;place-items:center;font-family:var(--mono);font-size:12px;font-weight:700;flex:none}
+.rpt-lg.d{color:var(--fs-blue);background:rgba(51,112,255,.1)}
+.rpt-lg.c{color:var(--fs-green);background:var(--fs-green-bg)}
+.rpt-lg.l{color:var(--fs-orange);background:var(--fs-orange-bg)}

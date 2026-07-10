@@ -26,6 +26,8 @@ function InlineDiff({ entry }){
 }
 
 function DocView({ signed, toggleSign, diffEntry }){
+  /* docKind:'review' → 交付审阅报告壳层（report-sections.jsx）；plan 走下方原路径。 */
+  if(REVIEW_MODEL.docKind==='review') return <ReportDocView signed={signed} toggleSign={toggleSign} diffEntry={diffEntry}/>;
   const meta=REVIEW_MODEL.meta;
   const ctx={ signed, toggleSign };
   return (

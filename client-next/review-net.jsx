@@ -40,9 +40,12 @@ function postRewriteApply(sessionId, items){ return fetchJson('POST',`${sp(sessi
    （window.REVIEW_DOC_SOURCE，与服务端文件同步）；缺省时 body 留空，服务端导出磁盘现有内容。 */
 function postDone(sessionId, content){ return fetchJson('POST',`${sp(sessionId)}/done`, typeof content==='string'?{ content }:undefined); }
 
-/* ExtractResult → REVIEW_MODEL（复用 contract 层派生，后端字段变更时只对齐 review-contract）。 */
+/* ExtractResult → REVIEW_MODEL（复用 contract 层派生，后端字段变更时只对齐 review-contract）。
+   docKind:'review' 走 buildReportModel（交付审阅报告）；其余（plan / 缺省）走原路径不变。 */
 function buildModelFromExtract(result, doc){
-  return buildReviewModel(adaptExtract(result, { project:'scribepad', file:String(doc).split('/').pop() }));
+  const file=String(doc).split('/').pop();
+  if(result&&result.docKind==='review') return buildReportModel(result, { project:'scribepad', file });
+  return buildReviewModel(adaptExtract(result, { project:'scribepad', file }));
 }
 
 /* 把一次抽取结果 + 源文档写入全局（App 只读 window.REVIEW_MODEL / REVIEW_DOC_SOURCE）。

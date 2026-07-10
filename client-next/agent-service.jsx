@@ -19,9 +19,12 @@ function createMockAgent(){
 
   /* 引用图统计（ai-refs 回复用，从模型层派生而非写死） */
   function refStats(){
+    /* inbound 仅 plan 模型有（REPORT_MODEL 无引用图）→ 兜底空对象，避免离线 mock agent 在
+       review 模式下 ai-refs 命令时崩栈。 */
+    const inbound=REVIEW_MODEL.inbound||{};
     const labeled=Object.entries(REVIEW_MODEL.points).filter(([,e])=>!['sec','acc'].includes(e.kind));
-    const edges=Object.values(REVIEW_MODEL.inbound).reduce((a,v)=>a+v.length,0);
-    const hot=Object.entries(REVIEW_MODEL.inbound).sort((a,b)=>b[1].length-a[1].length).slice(0,2).map(([k])=>k);
+    const edges=Object.values(inbound).reduce((a,v)=>a+v.length,0);
+    const hot=Object.entries(inbound).sort((a,b)=>b[1].length-a[1].length).slice(0,2).map(([k])=>k);
     return { labels:labeled.length, edges, hot };
   }
 
