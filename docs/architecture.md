@@ -54,7 +54,6 @@ core/
 │   ├── rules/            # presence / form / graph / context / types
 │   ├── severity.ts       # 机制 × 置信度 → severity(仅 rule + conf 1.0 可为 blocker)
 │   └── judge.ts          # emptyJudge —— LlmJudge seam(设计好、暂闲置)
-├── refine/loop.ts        # 修复闭环:extract → verify →(LLM 改)→ 重抽,四终止态(已实现待接线)
 └── agent/
     ├── task.ts           # TaskSpec / AgentError(任务描述 = prompt + schema + retry)
     ├── runner.ts         # runTask:build → run → 剥 fence → 校验 → 重试
@@ -65,7 +64,6 @@ core/
 
 - **extract** — markdown → 8 节结构事实。每个信息点带 `kind` / `label?` / `refs` / `anchor?` / `role`,并保留结构事实 `cells`(GFM 表格逐列)、`group`(粗体子组 / H3)、`ordinal`(有序序号);决策节另出 `DecisionCard`(chosen / pick / question / core / cost / facts);文档级出 `meta`(H1 + 引言 blockquote)。degrade 而不 throw。
 - **verify** — 在 extract 结果上跑 v2 四层模型(L1 presence / L2 form / L3 graph;L4 = 机制 + 置信度贯穿全程)出 `Problem[]`。本期只发确定性规则(mechanism='rule');AI 半边(LlmJudge)是留好的 seam,接入后其 findings 经引文校验 + severity 推导,永不产生 blocker。
-- **refine** — 修复闭环(extract → verify → LLM 改写 → 重抽),四终止态(ready / paused-needs-human / stalled / max-iter),永远返回 best-so-far。已实现,尚未接到路由。
 - **grounding** — 稳定标签 `^[GDRPQB]\d+$`(G 目标闸 / D 决策 / R 风险 / P 前置 / Q 待确认;B = 目标节里的已核实 bug),扫描引用图并支持按标签导航;`S`/`A`/`§` 是前端由 ordinal 派生的伪标签,不是后端标签。
 
 ### Driven Ports (`types/ports.ts`)
@@ -74,16 +72,18 @@ core/
 LlmRunner    run(req) → Result<string, LlmError>        # 跑 agent 任务,返回原始文本
 ReviewStore  load / save(docId, ReviewState)            # 持久化用户状态(不落抽取结果)
 DocSource    read / write?(docId)                       # 供文档内容(write 可选:只读源可省)
+ExportSink   export(outputPath, content)                # 导出最终文档为独立产品(与源文档写互相独立)
 ```
 
-`ReviewState = { annotations, signoffs }` —— 只存"用户决定了什么",抽取结果从不持久化(每次重算)。
+`ReviewState = { annotations, signoffs }` —— 只存"用户决定了什么",抽取结果从不持久化(每次重算)。ExportSink 将通过核准文档导出到 `outputPath`(独立于源文档是否可写,集成可路由到自己的存储)。
 
 ### Driven Adapters (`server/adapters/`)
 
 ```
-llm-execa.ts       # 实现 LlmRunner:execa spawn LLM CLI(codex-cli / claude-code-cli)
-store-sidecar.ts   # 实现 ReviewStore:sidecar JSON(工厂注入 repoRoot/env)
-docsource-fs.ts    # 实现 DocSource:文件系统
+llm-execa.ts           # 实现 LlmRunner:execa spawn LLM CLI(codex-cli / claude-code-cli)
+store-sidecar.ts       # 实现 ReviewStore:sidecar JSON(工厂注入 repoRoot/env)
+docsource-fs.ts        # 实现 DocSource:文件系统
+export-sink-fs.ts      # 实现 ExportSink:写到 XDG state home(工厂注入 env)
 ```
 
 **单一 spawn 路径**:全应用只有 `llm-execa` 用 execa。
@@ -136,13 +136,11 @@ POST /api/sessions/:id/agent                 # 单一 AI 通道(SSE:progress* �
 POST /api/sessions/:id/done                  # 合闸导出;GET .../wait 阻塞到合闸
 ```
 
-**fallback / 其它**:`/api/session`(+ `/heartbeat` `/close`)、非会话 `/api/file` `/api/save` `/api/annotations` `/api/rewrite`(经 `getFallbackSession`)、`/api/ai/{config,status,test}`、`/healthz`,以及 `/next/*` 静态挂载。
-
-已退休、**不要再写**的端点:`/api/extract`(fallback)、`/api/session/export`、`/api/plan-state`、`/api/review-normalize`。
+**其它**:`/api/session`(+ `/heartbeat` `/close`)、非会话 `/api/file` `/api/save` `/api/annotations` `/api/rewrite`(经 `getFallbackSession`)、`/api/ai/{config,status,test}`、`/healthz`,以及 `/next/*` 静态挂载。
 
 ## 数据流
 
-**读路径**:`markdown → core/extract → ExtractResult →(前端 adaptExtract 派生 PLAN_MODEL)→ 渲染`。
+**读路径**:`markdown → core/extract → ExtractResult →(前端 adaptExtract 派生 REVIEW_MODEL)→ 渲染`。
 
 **写路径统一为"改 markdown 源 → 重抽取"**:`rewrite-apply` 与 selection-op 真改文档时都复用 `applyRewrites` 做源码 splice(带漂移守卫:锚点 selection 不匹配即 409),save 后重抽,前端重渲染。抽取结果从不持久化。
 
