@@ -6,15 +6,23 @@
    约定与 review-sections.jsx 一致：每张裁决卡 / 声明行 / 遗留行带 data-pt +
    data-screen-label（选区批注 / 跳转 / scroll-spy 靠它们定位）；节头带 data-sec。
    降级铁律：REPORT_MODEL 各数组恒为数组，空数组走占位而非崩渲染。 */
-const { useState: useStateRpt } = React;
+const { useState: useStateRpt, useRef: useRefRpt, useEffect: useEffectRpt } = React;
 
-/* ── 复制到剪贴板 + 短暂「已复制」反馈；剪贴板不可用时静默降级（不报错）。 ── */
+/* ── 复制到剪贴板 + 短暂「已复制」反馈；剪贴板不可用时静默降级（不报错）。
+   计时器 id 存 ref：再次点击时先清旧计时器再开新的，卸载时也清——与
+   review-hooks.jsx 的 useToast 同一手法，避免卸载后 setState 警告。 ── */
 function CopyCmd({ cmd, block }){
   const [copied, setCopied]=useStateRpt(false);
+  const timer=useRefRpt(null);
+  useEffectRpt(()=>()=>clearTimeout(timer.current),[]);
   function copy(){
     try{
       if(navigator.clipboard&&navigator.clipboard.writeText){
-        navigator.clipboard.writeText(cmd).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),1200); }).catch(()=>{});
+        navigator.clipboard.writeText(cmd).then(()=>{
+          setCopied(true);
+          clearTimeout(timer.current);
+          timer.current=setTimeout(()=>setCopied(false),1200);
+        }).catch(()=>{});
       }
     }catch(_){}
   }

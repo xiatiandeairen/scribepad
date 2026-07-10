@@ -39,7 +39,16 @@ const statusLabelOf = (status) => RECON_STATUS_LABEL[status] || '—';
 const LEFTOVER_KIND_LABEL = { deferred: '暂缓', assumption: '假设', limitation: '已知限制' };
 const kindLabelOf = (kind) => LEFTOVER_KIND_LABEL[kind] || '—';
 
-const truncate60 = (s) => String(s || '').slice(0, 60);
+/* slice(0,n) 可能切在 UTF-16 代理对中间（高位在 n-1、低位在 n），留下孤立的高位
+   代理——往回退一位，避免产出非法的半个代理对。与 review-net.jsx 的
+   truncateAtCharBoundary 用同一手法（两文件各自 window 全局挂载，不跨文件
+   import，故本地复一份 4 行纯函数而非跨文件引用）。 */
+function truncateAtCharBoundary(str, max) {
+  const code = str.charCodeAt(max - 1);
+  const end = code >= 0xd800 && code <= 0xdbff ? max - 1 : max;
+  return str.slice(0, end);
+}
+const truncate60 = (s) => truncateAtCharBoundary(String(s || ''), 60);
 
 /* ── 头部引导块解析：plan/commits/日期/门禁/复核/建议路径 ──
    extractor 会把引导块的多行折叠成一个空白压缩后的字符串，因此不按行号定位，
@@ -72,7 +81,10 @@ function parseReportMeta(intro) {
   const gatesSeg = segOf('门禁:');
   const verifySeg = segOf('复核:');
 
-  const commitsMatch = /([0-9a-f]{6,40}\.\.[0-9a-f]{6,40})/.exec(commitsSeg);
+  /* {3,40} — 6 起步会漏掉合法短哈希缩写（如本文件测试用到的 review-edge.md 头部
+     的 aaa..bbb），导致 commits 回退成 '' 而 commitCount 仍正常解析，两个字段
+     互相矛盾。3 是 git 缩写哈希的实用下限。 */
+  const commitsMatch = /([0-9a-f]{3,40}\.\.[0-9a-f]{3,40})/.exec(commitsSeg);
   const countMatch = /（(\d+)\s*个）/.exec(commitsSeg);
   const dateMatch = /(\d{4}-\d{2}-\d{2})/.exec(dateSeg);
   /* extractor 的 compact() 会把 inline code 的反引号剥掉，因此反引号只是可选
@@ -183,6 +195,14 @@ function buildReportModel(extractResult, docMeta) {
     details,
     points,
     signable,
+    /* plan-mode REVIEW_MODEL 的引用图 / 分节索引 / 图例 / 决策卡字段——review 模式
+       恒为空，但结构上给出，让任何未来的 REVIEW_MODEL.* 读取方（agent-service.jsx
+       的 refStats() 等）不必各自记得防御性兜底 ||{} / ||[]。agent-service.jsx 的
+       本地兜底仍保留（纵深防御）。 */
+    inbound: {},
+    byKind: {},
+    legend: [],
+    decisions: [],
   };
 }
 

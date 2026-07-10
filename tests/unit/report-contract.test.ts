@@ -119,6 +119,11 @@ type ReportModel = {
   details: ReviewDetailFixture[]
   points: Record<string, ReportPointEntry>
   signable: string[]
+  // Structural parity with plan-mode REVIEW_MODEL — always empty in review mode.
+  inbound: Record<string, unknown>
+  byKind: Record<string, unknown>
+  legend: unknown[]
+  decisions: unknown[]
 }
 
 type CmdItem = { id: string; icon: string; title: string; sub: string; sec?: string }
@@ -311,6 +316,16 @@ describe('parseReportMeta: header blockquote → structured meta', () => {
     expect(meta.gates).toEqual([])
     expect(meta.verifyCmd).toBe('')
     expect(meta.readingPath).toBe('')
+  })
+
+  // tests/fixtures/review-edge.md's own header: "commits: aaa..bbb（1 个）" — a
+  // legit short abbreviated-hash range. The regex required 6-40 hex chars per
+  // side, so a 3-char abbreviation silently yielded '' while commitCount still
+  // parsed to 1 — a data-losing inconsistency between the two fields.
+  it('parses a short abbreviated-commit range (3-char hashes) alongside its count', () => {
+    const meta = net.parseReportMeta('commits: aaa..bbb（1 个）')
+    expect(meta.commits).toBe('aaa..bbb')
+    expect(meta.commitCount).toBe(1)
   })
 })
 
@@ -579,5 +594,46 @@ describe('filterSelMoreForDocKind', () => {
   it('leaves the selection more-menu untouched for a plan doc', () => {
     expect(net.filterSelMoreForDocKind(SEL_MORE_FIXTURE, undefined)).toEqual(SEL_MORE_FIXTURE)
     expect(net.filterSelMoreForDocKind(SEL_MORE_FIXTURE, 'plan')).toEqual(SEL_MORE_FIXTURE)
+  })
+})
+
+// ── truncate60 (points[label].brief) — surrogate-pair safety ─────────────────
+//
+// truncate60 was a naive String#slice(0, 60), which can land the cut exactly
+// inside a UTF-16 surrogate pair (an emoji or other astral character), leaving
+// a lone high surrogate in points[label].brief. report-net.jsx's
+// truncateAtCharBoundary already solves this for the DOM-snapshot truncation
+// (back off one code unit when the cut lands on a high surrogate) — the brief
+// truncation needs the same guard.
+describe('buildReportModel: truncate60 surrogate-pair safety', () => {
+  it('backs off one code unit rather than splitting an emoji at the 60-char cut', () => {
+    // 59 filler chars + a 2-code-unit emoji straddling index 59/60 + more filler.
+    const long = 'x'.repeat(59) + '🎯' + 'y'.repeat(10)
+    const model = net.buildReportModel(
+      { docKind: 'review', review: { verdicts: [{ label: 'D1', title: 't', ifRejected: long }] } },
+      {},
+    )
+    const brief = model.points.D1.brief
+    // A lone (unpaired) high surrogate at the end is the corruption this guards against.
+    expect(/[\uD800-\uDBFF]$/.test(brief)).toBe(false)
+    expect(brief).toBe(long.slice(0, 59))
+  })
+})
+
+// ── buildReportModel surface parity with plan-mode REVIEW_MODEL consumers ────
+//
+// review-doc/review-right.jsx and agent-service.jsx read REVIEW_MODEL.inbound
+// /byKind/legend/decisions unconditionally in the plan path; agent-service.jsx
+// already needed a local `REVIEW_MODEL.inbound||{}` guard to survive review
+// mode. buildReportModel must emit structurally-compatible empty shapes so
+// every future REVIEW_MODEL.* reader is safe by construction, not by every
+// call site remembering to guard.
+describe('buildReportModel: structural parity fields (inbound/byKind/legend/decisions)', () => {
+  it('emits empty structurally-compatible shapes for plan-mode-shaped fields', () => {
+    const model = net.buildReportModel(standardExtract(), {})
+    expect(model.inbound).toEqual({})
+    expect(model.byKind).toEqual({})
+    expect(model.legend).toEqual([])
+    expect(model.decisions).toEqual([])
   })
 })
