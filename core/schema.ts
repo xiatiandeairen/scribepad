@@ -9,11 +9,17 @@
  */
 import { z } from 'zod'
 import type {
+  Claim,
   DecisionCard,
   ExtractResult,
   ExtractedItem,
   InfoKind,
+  Leftover,
+  ReconciliationRow,
+  ReviewDetail,
+  ReviewExtract,
   Signoff,
+  VerdictCard,
 } from '../types/domain.js'
 
 const infoKindSchema = z.enum([
@@ -84,10 +90,63 @@ const docMetaSchema = z.object({
   intro: z.string().optional(),
 })
 
+export const verdictCardSchema = z.object({
+  label: z.string(),
+  tag: z.string().optional(),
+  title: z.string(),
+  context: z.string().optional(),
+  chosen: z.string().optional(),
+  alternative: z.string().optional(),
+  whyNotAsked: z.string().optional(),
+  ifRejected: z.string().optional(),
+  evidence: z.string().optional(),
+  anchor: srcAnchorSchema.optional(),
+}) satisfies z.ZodType<VerdictCard>
+
+export const reconciliationRowSchema = z.object({
+  item: z.string(),
+  status: z.enum(['done', 'deviated', 'dropped', 'added', 'unknown']),
+  note: z.string().optional(),
+  refs: z.array(z.string()),
+  anchor: srcAnchorSchema.optional(),
+}) satisfies z.ZodType<ReconciliationRow>
+
+export const claimSchema = z.object({
+  label: z.string(),
+  claim: z.string(),
+  evidence: z.string().optional(),
+  verify: z.string().optional(),
+  unverified: z.boolean(),
+  anchor: srcAnchorSchema.optional(),
+}) satisfies z.ZodType<Claim>
+
+export const leftoverSchema = z.object({
+  label: z.string(),
+  kind: z.enum(['deferred', 'assumption', 'limitation', 'unknown']),
+  text: z.string(),
+  condition: z.string().optional(),
+  anchor: srcAnchorSchema.optional(),
+}) satisfies z.ZodType<Leftover>
+
+const reviewDetailSchema = z.object({
+  text: z.string(),
+  anchor: srcAnchorSchema.optional(),
+}) satisfies z.ZodType<ReviewDetail>
+
+export const reviewExtractSchema = z.object({
+  verdicts: z.array(verdictCardSchema),
+  reconciliation: z.array(reconciliationRowSchema),
+  claims: z.array(claimSchema),
+  leftovers: z.array(leftoverSchema),
+  details: z.array(reviewDetailSchema),
+}) satisfies z.ZodType<ReviewExtract>
+
 export const extractResultSchema = z.object({
   points: z.array(extractedItemSchema),
   decisions: z.array(decisionCardSchema),
   meta: docMetaSchema.optional(),
+  docKind: z.enum(['plan', 'review']).optional(),
+  review: reviewExtractSchema.optional(),
 }) satisfies z.ZodType<ExtractResult>
 
 export const signoffSchema = z.object({
