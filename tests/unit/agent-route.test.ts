@@ -50,7 +50,7 @@ async function setup(doc: string, llm: LlmRunner) {
     env: { XDG_STATE_HOME: xdg },
     llmRunner: llm,
   })
-  const { sessionId } = manager.openSession(filePath)
+  const { sessionId } = await manager.openSession(filePath)
 
   const ctx = { sessionManager: manager } as unknown as AppContext
   const app = new Hono()

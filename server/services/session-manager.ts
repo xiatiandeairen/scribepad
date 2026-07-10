@@ -1,11 +1,16 @@
-import { existsSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import type { Annotation } from '../../types/annotation.js'
 import type { SessionResponse } from '../../types/api.js'
 import type { Signoff } from '../../types/domain.js'
-import type { DocSource, LlmRunner, ReviewState, ReviewStore } from '../../types/ports.js'
+import type {
+  DocSource,
+  ExportSink,
+  LlmRunner,
+  ReviewState,
+  ReviewStore,
+} from '../../types/ports.js'
 import { createFsDocSource } from '../adapters/docsource-fs.js'
+import { createFsExportSink } from '../adapters/export-sink-fs.js'
 import { createSidecarStore } from '../adapters/store-sidecar.js'
 import { createExecaRunner } from '../adapters/llm-execa.js'
 import { validateStateTransition } from '../../core/annotation-state.js'
@@ -95,6 +100,8 @@ export interface SessionManagerOptions {
   docSource?: DocSource
   /** Injected at the composition root; defaults to the sidecar-backed store. */
   reviewStore?: ReviewStore
+  /** Injected at the composition root; defaults to the fs-backed export sink. */
+  exportSink?: ExportSink
   /** Injected for tests; defaults to a per-call execa runner from the AI config. */
   llmRunner?: LlmRunner
 }
@@ -113,6 +120,7 @@ export class SessionManager {
   private readonly getAiConfig: (() => AiConfig) | undefined
   private readonly docSource: DocSource
   private readonly reviewStore: ReviewStore
+  private readonly exportSink: ExportSink
   private readonly llmRunner: LlmRunner | undefined
   private readonly sessions = new Map<string, DocumentSession>()
   private readonly sessionsByPath = new Map<string, string>()
@@ -130,14 +138,22 @@ export class SessionManager {
     this.docSource = options.docSource ?? createFsDocSource()
     this.reviewStore =
       options.reviewStore ?? createSidecarStore({ repoRoot: this.repoRoot, env: this.env })
+    this.exportSink = options.exportSink ?? createFsExportSink()
     this.llmRunner = options.llmRunner
     this.lastActivityAt = this.now().toISOString()
   }
 
-  openSession(filePath: string): { sessionId: string; url: string } {
+  async openSession(filePath: string): Promise<{ sessionId: string; url: string }> {
     const absolutePath = resolve(filePath)
-    if (!existsSync(absolutePath)) {
-      throw new Error(`File not found: ${absolutePath}`)
+    // Existence check goes through the DocSource port (a read-only / remote
+    // source has no local file to stat): a not-found read means "no such
+    // document"; any other read fault surfaces its own message.
+    const read = await this.docSource.read(absolutePath)
+    if (!read.ok) {
+      if (read.error.kind === 'not-found') {
+        throw new Error(`File not found: ${absolutePath}`)
+      }
+      throw new Error(read.error.message)
     }
 
     const existingId = this.sessionsByPath.get(absolutePath)
@@ -386,8 +402,8 @@ export class SessionManager {
     const readResult = await this.docSource.read(session.filePath)
     if (!readResult.ok) throw new Error(readResult.error.message)
     const finalContent = readResult.value.content
-    await mkdir(dirname(session.outputPath), { recursive: true })
-    await writeFile(session.outputPath, finalContent, 'utf8')
+    const exported = await this.exportSink.export(session.outputPath, finalContent)
+    if (!exported.ok) throw new Error(exported.error.message)
     session.exportedAt = this.now().toISOString()
     session.dirty = false
     session.status = 'closed'

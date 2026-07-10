@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -12,7 +12,7 @@ import {
 import { docIdFor, documentStatePath, exportPathFor, repoIdFor } from '../../server/paths'
 import { extract } from '../../core/extract/index.js'
 import type { Signoff } from '../../types/domain.js'
-import type { LlmRunner } from '../../types/ports.js'
+import type { ExportSink, LlmRunner } from '../../types/ports.js'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 function readFixture(name: string): string {
@@ -49,8 +49,8 @@ describe('SessionManager', () => {
     await writeFile(b, '# B\n', 'utf8')
 
     const manager = new SessionManager({ repoRoot: dir, baseUrl: () => 'http://127.0.0.1:3000' })
-    const first = manager.openSession(a)
-    const second = manager.openSession(b)
+    const first = await manager.openSession(a)
+    const second = await manager.openSession(b)
 
     expect(first.sessionId).not.toBe(second.sessionId)
     // url is the `/next/?doc=<path>` panel URL, keyed by document (not session id).
@@ -66,8 +66,8 @@ describe('SessionManager', () => {
     await writeFile(filePath, '# Plan\n', 'utf8')
 
     const manager = new SessionManager({ repoRoot: dir, baseUrl: () => 'http://127.0.0.1:3000' })
-    const first = manager.openSession(filePath)
-    const second = manager.openSession(filePath)
+    const first = await manager.openSession(filePath)
+    const second = await manager.openSession(filePath)
 
     expect(second.sessionId).toBe(first.sessionId)
     expect(second.url).toBe(first.url)
@@ -79,7 +79,7 @@ describe('SessionManager', () => {
     await writeFile(filePath, '# Plan\n', 'utf8')
 
     const manager = new SessionManager({ repoRoot: dir })
-    const opened = manager.openSession(filePath)
+    const opened = await manager.openSession(filePath)
     const connected = manager.connect(opened.sessionId)
     manager.heartbeat(opened.sessionId, connected.clientId)
     manager.disconnect(opened.sessionId, connected.clientId)
@@ -93,7 +93,7 @@ describe('SessionManager', () => {
     const filePath = join(dir, 'plan.md')
     await writeFile(filePath, '# Plan\n', 'utf8')
     const manager = new SessionManager({ repoRoot: dir, now: () => now })
-    manager.openSession(filePath)
+    await manager.openSession(filePath)
 
     now = new Date('2026-05-05T12:10:00.000Z')
     expect(manager.shouldShutdown({ initialIdleMs: 60_000, activeIdleMs: 60_000 })).toBe(false)
@@ -120,12 +120,46 @@ describe('SessionManager', () => {
       env: { XDG_STATE_HOME: xdg },
       now: () => new Date('2026-05-05T12:00:00.000Z'),
     })
-    const opened = manager.openSession(filePath)
+    const opened = await manager.openSession(filePath)
     const done = await manager.done(opened.sessionId)
 
     expect(done.outputPath).toBe(exportPathFor(dir, filePath, { XDG_STATE_HOME: xdg }))
     await expect(readFile(done.outputPath, 'utf8')).resolves.toBe('# Plan\n\nFinal content.\n')
     expect(() => manager.getSession(opened.sessionId)).toThrow(/Session not found/)
+  })
+
+  it('routes the export through the injected ExportSink, never writing fs directly', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'scribepad-export-'))
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
+    const filePath = join(dir, 'plan.md')
+    await writeFile(filePath, '# Plan\n\nApproved.\n', 'utf8')
+
+    // The fake sink records calls in memory and never touches disk. If done()
+    // bypasses the port (writing fs itself), the recording stays empty AND the
+    // export file lands on disk — both assertions below then fail.
+    const exportCalls: Array<{ outputPath: string; content: string }> = []
+    const fakeExportSink: ExportSink = {
+      export: async (outputPath, content) => {
+        exportCalls.push({ outputPath, content })
+        return { ok: true, value: undefined }
+      },
+    }
+
+    const manager = new SessionManager({
+      repoRoot: dir,
+      env: { XDG_STATE_HOME: xdg },
+      now: () => new Date('2026-05-05T12:00:00.000Z'),
+      exportSink: fakeExportSink,
+    })
+    const opened = await manager.openSession(filePath)
+    const done = await manager.done(opened.sessionId)
+
+    const expectedPath = exportPathFor(dir, filePath, { XDG_STATE_HOME: xdg })
+    expect(done.outputPath).toBe(expectedPath)
+    // The export went through the port with the right path + content…
+    expect(exportCalls).toEqual([{ outputPath: expectedPath, content: '# Plan\n\nApproved.\n' }])
+    // …and nothing was written straight to disk (the fake sink holds it in memory).
+    expect(existsSync(expectedPath)).toBe(false)
   })
 
   it('waitForDone resolves when the session is done', async () => {
@@ -139,7 +173,7 @@ describe('SessionManager', () => {
       env: { XDG_STATE_HOME: xdg },
       now: () => new Date('2026-05-05T12:00:00.000Z'),
     })
-    const opened = manager.openSession(filePath)
+    const opened = await manager.openSession(filePath)
     const waiting = manager.waitForDone(opened.sessionId)
     const done = await manager.done(opened.sessionId)
 
@@ -157,7 +191,7 @@ describe('SessionManager', () => {
       env: { XDG_STATE_HOME: xdg },
       now: () => new Date('2026-05-05T12:00:00.000Z'),
     })
-    const opened = manager.openSession(filePath)
+    const opened = await manager.openSession(filePath)
     const done = await manager.done(opened.sessionId)
 
     await expect(manager.waitForDone(opened.sessionId)).resolves.toEqual(done)
@@ -169,7 +203,7 @@ describe('SessionManager', () => {
     const filePath = join(dir, 'plan.md')
     await writeFile(filePath, '# Plan\n', 'utf8')
     const manager = new SessionManager({ repoRoot: dir, now: () => now })
-    const opened = manager.openSession(filePath)
+    const opened = await manager.openSession(filePath)
     await manager.done(opened.sessionId)
 
     now = new Date('2026-05-05T12:02:59.000Z')
@@ -191,7 +225,7 @@ describe('SessionManager — readSignoffs / writeSignoffs', () => {
     const filePath = join(dir, 'plan.md')
     await writeFile(filePath, '# Plan\n', 'utf8')
     const manager = new SessionManager({ repoRoot: dir, env: { XDG_STATE_HOME: xdg } })
-    const { sessionId } = manager.openSession(filePath)
+    const { sessionId } = await manager.openSession(filePath)
     return { manager, sessionId }
   }
 
@@ -234,7 +268,7 @@ describe('SessionManager — extract', () => {
     await writeFile(filePath, readFixture('tests/fixtures/plan-auth-soc2.md'), 'utf8')
 
     const manager = new SessionManager({ repoRoot: dir, env: { XDG_STATE_HOME: xdg } })
-    const { sessionId } = manager.openSession(filePath)
+    const { sessionId } = await manager.openSession(filePath)
     const result = await manager.extract(sessionId)
 
     expect(result.points.length).toBeGreaterThan(0)
@@ -273,7 +307,7 @@ describe('SessionManager — rewriteApply', () => {
       env: { XDG_STATE_HOME: xdg },
       llmRunner: llm,
     })
-    const { sessionId } = manager.openSession(filePath)
+    const { sessionId } = await manager.openSession(filePath)
     return { manager, sessionId, filePath }
   }
 
@@ -337,7 +371,7 @@ describe('SessionManager — applySelectionOp', () => {
       env: { XDG_STATE_HOME: xdg },
       llmRunner: llm,
     })
-    const { sessionId } = manager.openSession(filePath)
+    const { sessionId } = await manager.openSession(filePath)
     return { manager, sessionId, filePath }
   }
 

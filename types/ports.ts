@@ -83,3 +83,28 @@ export interface DocSource {
   read(docId: string): Promise<Result<DocContent, DocError>>
   write?(docId: string, content: string): Promise<Result<void, DocError>>
 }
+
+// ── ExportSink ──────────────────────────────────────────────────────────────
+
+export type ExportErrorKind = 'write'
+
+export interface ExportError {
+  kind: ExportErrorKind
+  message: string
+}
+
+/**
+ * Emits the approved final document as a standalone export artifact at a
+ * caller-computed `outputPath`.
+ *
+ * Deliberately distinct from `DocSource.write`, which mutates the *source*
+ * document under review (its docId is the source path). An export is a *new*
+ * derived product — the agent-context file — whose destination is independent of
+ * whether the source is mutable: `done()` may export even when the source is a
+ * read-only integration source. In standalone this writes under XDG state home;
+ * an integration can route exports to its own store without opening up source
+ * writes. Never throws — returns `Err` on write failure.
+ */
+export interface ExportSink {
+  export(outputPath: string, content: string): Promise<Result<void, ExportError>>
+}

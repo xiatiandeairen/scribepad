@@ -32,7 +32,7 @@ export function sessionsRoute(ctx: AppContext) {
   app.post('/sessions/open', async (c) => {
     try {
       const req = (await c.req.json()) as OpenSessionRequest
-      const opened = ctx.sessionManager.openSession(req.filePath)
+      const opened = await ctx.sessionManager.openSession(req.filePath)
       const body: OpenSessionResponse = opened
       return c.json(body)
     } catch (e) {

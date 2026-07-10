@@ -115,9 +115,9 @@ const app = createApp({
 })
 
 const port = explicitPort ?? 0
-const server = serve({ fetch: app.fetch, port, hostname: config.host }, (info) => {
+const server = serve({ fetch: app.fetch, port, hostname: config.host }, async (info) => {
   baseUrl = `http://${config.host}:${info.port}`
-  const opened = sessionManager.openSession(filePath)
+  const opened = await sessionManager.openSession(filePath)
   const panelUrl = `${baseUrl}/next/`
   log(`[scribepad] serving ${filePath}`)
   log(`[scribepad] panel  ${panelUrl}`)
