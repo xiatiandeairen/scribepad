@@ -345,7 +345,8 @@ function App({ sessionId, doc }){
           onRefine={()=>{ setSelCtx(tool.text.slice(0,60)); setTool(null); setChatOpen(true); }}
           onRewrite={()=>{ setRwQuote(tool.text); setRwOpen(true); }}
           onAnnotate={addAnnotation}
-          onMore={moreEdit}/>}
+          onMore={moreEdit}
+          more={filterSelMoreForDocKind(SEL_MORE, REVIEW_MODEL.docKind)}/>}
       </main>
 
       {rwOpen && <RewriteModal quote={rwQuote} onClose={()=>setRwOpen(false)} onConfirm={doRewrite}/>}
@@ -358,7 +359,7 @@ function App({ sessionId, doc }){
         history={history} diffEntry={diffEntry} onShowDiff={showDiff}/>}
 
       {fbOpen && <FeedbackPopover onClose={()=>setFbOpen(false)} onSubmit={submitFeedback}/>}
-      {cmdk && <CmdK cmds={CMDS} onClose={()=>setCmdk(false)} onRun={runCmd}/>}
+      {cmdk && <CmdK cmds={filterCommandsForDocKind(CMDS, REVIEW_MODEL.docKind)} onClose={()=>setCmdk(false)} onRun={runCmd}/>}
       {agentOpen && <AgentConfig cfg={agentCfg} onSave={(c)=>{ setAgentCfg(c); flash('Agent 接入已保存'); }} onClose={()=>setAgentOpen(false)}/>}
       {settingsOpen && <SettingsModal s={settings} setS={setSettings} onClose={()=>setSettingsOpen(false)}/>}
       {toast && <div className="toast">{I.check}{toast}</div>}

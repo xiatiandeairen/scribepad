@@ -186,4 +186,24 @@ function buildReportModel(extractResult, docMeta) {
   };
 }
 
-Object.assign(window, { parseReportMeta, buildReportModel });
+/* ── docKind 命令过滤：cmdk / SelToolbar 更多菜单在 review 文档下隐藏 plan-only
+   条目（ai-review / ai-refs 命令；dcard / risk / open 选区操作）。按 CMDS /
+   SEL_MORE（review-mock-data.jsx）里的稳定 id 精确匹配，不匹配展示文案——
+   文案是本地化文本，id 才是跨模块契约。plan 文档（docKind 非 'review'）原样
+   透传，不产生新数组引用之外的行为变化。 ── */
+const PLAN_ONLY_CMD_IDS = new Set(['ai-review', 'ai-refs']);
+const PLAN_ONLY_SEL_MORE_IDS = new Set(['dcard', 'risk', 'open']);
+
+function filterCommandsForDocKind(cmds, docKind) {
+  if (docKind !== 'review') return cmds;
+  return (cmds || [])
+    .map((g) => ({ ...g, items: (g.items || []).filter((it) => !PLAN_ONLY_CMD_IDS.has(it.id)) }))
+    .filter((g) => g.items.length > 0);
+}
+
+function filterSelMoreForDocKind(items, docKind) {
+  if (docKind !== 'review') return items;
+  return (items || []).filter((it) => !PLAN_ONLY_SEL_MORE_IDS.has(it.id));
+}
+
+Object.assign(window, { parseReportMeta, buildReportModel, filterCommandsForDocKind, filterSelMoreForDocKind });

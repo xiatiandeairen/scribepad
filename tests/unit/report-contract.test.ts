@@ -121,9 +121,15 @@ type ReportModel = {
   signable: string[]
 }
 
+type CmdItem = { id: string; icon: string; title: string; sub: string; sec?: string }
+type CmdGroup = { grp: string; items: CmdItem[] }
+type SelMoreItem = { id: string; icon: string; label: string; k: string }
+
 type Net = {
   buildReportModel: (extractResult: unknown, docMeta: unknown) => ReportModel
   parseReportMeta: (intro: unknown) => ParsedIntro
+  filterCommandsForDocKind: (cmds: CmdGroup[], docKind: string | undefined) => CmdGroup[]
+  filterSelMoreForDocKind: (items: SelMoreItem[], docKind: string | undefined) => SelMoreItem[]
 }
 
 // Evaluate the shipped report-contract source with a stand-in window; harvest exports.
@@ -504,5 +510,74 @@ describe('buildReportModel: empty / missing review payload never throws', () => 
     expect(model.leftovers).toEqual([])
     expect(model.details).toEqual([])
     expect(model.signable).toEqual(['D1'])
+  })
+})
+
+// ── filterCommandsForDocKind / filterSelMoreForDocKind ───────────────────────
+//
+// cmdk is wired to the static CMDS list and SelToolbar's more-menu to the
+// static SEL_MORE list regardless of docKind, so 转决策卡/提为风险/提为待确认
+// always fail with a confusing error on review docs (there is no document
+// structure for a selection-op edit to append into), and 评审这份 plan /
+// 检查悬空引用 offer commands that do not apply to a review doc. These pure
+// filters drop the plan-only entries by their stable id — never by matching
+// display text — when docKind is 'review'.
+
+// Mirrors client-next/review-mock-data.jsx's CMDS/SEL_MORE shape exactly (ids
+// are the load-bearing part the filters key on).
+const CMDS_FIXTURE: CmdGroup[] = [
+  {
+    grp: 'AI 操作',
+    items: [
+      { id: 'ai-review', icon: 'check', title: '评审这份 plan', sub: '检查决策自洽性与 fixture 覆盖' },
+      { id: 'ai-refs', icon: 'link', title: '检查悬空引用', sub: '扫描标签引用图' },
+    ],
+  },
+  {
+    grp: '定位',
+    items: [
+      { id: 'go-dec', icon: 'sparkF', title: '跳到 §3 决策', sub: 'D1–D4 · 核心决策', sec: 'dec' },
+      { id: 'go-pre', icon: 'warn', title: '跳到 §7 前置', sub: 'P1–P4 · 等你拍板', sec: 'pre' },
+      { id: 'go-acc', icon: 'check', title: '跳到 §5 验收', sub: '9 条可判定断言', sec: 'acc' },
+    ],
+  },
+]
+
+const SEL_MORE_FIXTURE: SelMoreItem[] = [
+  { id: 'dcard', icon: 'table', label: '转为决策卡', k: '⌘D' },
+  { id: 'risk', icon: 'warn', label: '提为风险项', k: '⌘R' },
+  { id: 'open', icon: 'note', label: '提为待确认', k: '⌘U' },
+  { id: 'explain', icon: 'info', label: '解释这段', k: '⌘/' },
+]
+
+describe('filterCommandsForDocKind', () => {
+  it('drops ai-review and ai-refs (by id) on a review doc, keeping the 定位 group untouched', () => {
+    const filtered = net.filterCommandsForDocKind(CMDS_FIXTURE, 'review')
+    const ids = filtered.flatMap((g) => g.items.map((it) => it.id))
+    expect(ids).not.toContain('ai-review')
+    expect(ids).not.toContain('ai-refs')
+    expect(ids).toEqual(['go-dec', 'go-pre', 'go-acc'])
+  })
+
+  it('drops the now-empty "AI 操作" group entirely rather than leaving a dangling header', () => {
+    const filtered = net.filterCommandsForDocKind(CMDS_FIXTURE, 'review')
+    expect(filtered.map((g) => g.grp)).toEqual(['定位'])
+  })
+
+  it('leaves the command list untouched for a plan doc (docKind undefined or "plan")', () => {
+    expect(net.filterCommandsForDocKind(CMDS_FIXTURE, undefined)).toEqual(CMDS_FIXTURE)
+    expect(net.filterCommandsForDocKind(CMDS_FIXTURE, 'plan')).toEqual(CMDS_FIXTURE)
+  })
+})
+
+describe('filterSelMoreForDocKind', () => {
+  it('drops dcard/risk/open (by id) on a review doc, keeping explain', () => {
+    const filtered = net.filterSelMoreForDocKind(SEL_MORE_FIXTURE, 'review')
+    expect(filtered.map((it) => it.id)).toEqual(['explain'])
+  })
+
+  it('leaves the selection more-menu untouched for a plan doc', () => {
+    expect(net.filterSelMoreForDocKind(SEL_MORE_FIXTURE, undefined)).toEqual(SEL_MORE_FIXTURE)
+    expect(net.filterSelMoreForDocKind(SEL_MORE_FIXTURE, 'plan')).toEqual(SEL_MORE_FIXTURE)
   })
 })

@@ -1,9 +1,12 @@
 /* ═══ Spec Plan — 浮层组件：选区工具条 / 改写约束弹窗 ═══ */
 const { useState: useStateOv, useRef: useRefOv, useEffect: useEffectOv } = React;
 
-/* 划选浮动工具条：细化 · 改写 · 批注 · 更多（转决策卡 / 提风险 / 提待确认 / 解释） */
-function SelToolbar({ pos, onRefine, onRewrite, onAnnotate, onMore }){
+/* 划选浮动工具条：细化 · 改写 · 批注 · 更多（转决策卡 / 提风险 / 提待确认 / 解释）。
+   more 缺省回退全局 SEL_MORE；review-app.jsx 按 docKind 传入
+   filterSelMoreForDocKind(SEL_MORE, docKind) 过滤后的列表，隐藏 plan-only 选区操作。 */
+function SelToolbar({ pos, onRefine, onRewrite, onAnnotate, onMore, more }){
   const [open,setOpen]=useStateOv(false);
+  const items=more||SEL_MORE;
   useEffectOv(()=>{ setOpen(false); },[pos]);
   return (
     <div className="seltool" style={{left:pos.x,top:pos.y}} onMouseDown={e=>e.preventDefault()}>
@@ -14,7 +17,7 @@ function SelToolbar({ pos, onRefine, onRewrite, onAnnotate, onMore }){
       <span className="div"></span>
       <div className="more">
         <button onClick={()=>setOpen(o=>!o)}>{I.dots}</button>
-        {open && <div className="selmenu">{SEL_MORE.map(m=><button key={m.id} onClick={()=>{setOpen(false);onMore(m);}}>{I[m.icon]}{m.label}<span className="k">{m.k}</span></button>)}</div>}
+        {open && <div className="selmenu">{items.map(m=><button key={m.id} onClick={()=>{setOpen(false);onMore(m);}}>{I[m.icon]}{m.label}<span className="k">{m.k}</span></button>)}</div>}
       </div>
     </div>
   );
