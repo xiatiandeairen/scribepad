@@ -109,3 +109,72 @@ export interface ExportError {
 export interface ExportSink {
   export(outputPath: string, content: string): Promise<Result<void, ExportError>>
 }
+
+// ── FeedbackSink ───────────────────────────────────────────────────────────
+
+/**
+ * One reviewer-reported problem, queued for later triage. Deliberately
+ * self-contained: everything needed to understand and reproduce the report
+ * lives on the entry (or its attachments) so triage never has to go back and
+ * ask the reporter "what were you looking at?" — panel/CLI sources capture
+ * whatever context is available at submit time, and `category` is a free-form
+ * string (no enum) so callers aren't blocked from reporting by an unlisted
+ * kind of feedback.
+ */
+export interface FeedbackEntry {
+  id: string
+  ts: string
+  source: 'panel' | 'cli'
+  category?: string
+  text: string
+  docId?: string
+  sessionId?: string
+  /** Panel-only metadata passed through verbatim; the sink never interprets it. */
+  context?: {
+    scribepadCommit?: string
+    viewport?: string
+    activeSection?: string
+    consoleErrors?: string[]
+  }
+  /** Present only when `submit` was given a non-empty attachment. */
+  attachmentsDir?: string
+}
+
+/**
+ * Point-in-time copies of session state, taken by the caller (typically the
+ * server, via SessionManager) at submit time so a later triage pass sees
+ * exactly what the reporter saw — not whatever the session has drifted to
+ * since. Every field is optional; the sink persists only what it's given.
+ */
+export interface FeedbackAttachment {
+  /** Full document content at submit time. */
+  docSnapshot?: string
+  /** Serialized annotations + signoffs at submit time. */
+  reviewState?: string
+  /** DOM subtree snapshot supplied by a UI-sourced report. */
+  domSnapshot?: string
+  /** Extract output in effect at submit time. */
+  extractSnapshot?: string
+}
+
+export type FeedbackErrorKind = 'write'
+
+export interface FeedbackError {
+  kind: FeedbackErrorKind
+  message: string
+}
+
+/**
+ * Appends one feedback report to the central inbox and, when `attachment`
+ * carries any non-empty field, persists a same-`id` attachments bundle
+ * alongside it. `entry` excludes `id` / `ts` / `attachmentsDir` — the sink
+ * assigns those so every caller (HTTP route, CLI) gets identical id/timestamp
+ * semantics instead of reimplementing them. Never throws — returns `Err` on
+ * write failure.
+ */
+export interface FeedbackSink {
+  submit(
+    entry: Omit<FeedbackEntry, 'id' | 'ts' | 'attachmentsDir'>,
+    attachment?: FeedbackAttachment,
+  ): Promise<Result<{ id: string }, FeedbackError>>
+}
