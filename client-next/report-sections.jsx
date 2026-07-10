@@ -38,10 +38,11 @@ function VField({ label, value }){
   return <div className="rpt-field"><span className="rpt-fl">{label}</span><span className="rpt-fv">{value}</span></div>;
 }
 
-/* ── 引用芯片：点击滚到对应 [data-pt] 的裁决 / 声明 / 遗留（scrollIntoView，无路由）。 ── */
+/* ── 引用芯片：点击跳到对应 [data-pt] 的裁决 / 声明 / 遗留。走共享跳转总线
+   （review-refs.jsx 的 jumpTo，review-hooks.jsx 的 useJumpBus 负责滚动 + 闪烁高亮
+   + 返回栈），plan 路径同一套；不再自行 querySelector+scrollIntoView。 ── */
 function PtRef({ label }){
-  function go(){ const el=document.querySelector(`[data-pt="${label}"]`); if(el) el.scrollIntoView({ behavior:'smooth', block:'center' }); }
-  return <button className="rpt-ref" onClick={go}>{label}</button>;
+  return <button className="rpt-ref" onClick={()=>jumpTo(label)}>{label}</button>;
 }
 
 /* ═══ 节头（复用 .sec-h 版式，附节内计数徽标；保留 data-sec / data-screen-label）═══ */
@@ -253,7 +254,7 @@ function ReportRightPanel({ signed }){
                     const on=signedSet.has(l);
                     return (
                       <button key={l} className={`rpt-schip${on?' on':''}`} title={on?'已批准 / 已确认':'待处理'}
-                        onClick={()=>{ const el=document.querySelector(`[data-pt="${l}"]`); if(el) el.scrollIntoView({ behavior:'smooth', block:'center' }); }}>
+                        onClick={()=>jumpTo(l)}>
                         {on&&I.check}{l}
                       </button>
                     );
