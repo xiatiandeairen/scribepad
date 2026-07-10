@@ -41,10 +41,13 @@ export function createFsFeedbackSink(options: FeedbackSinkFsOptions = {}): Feedb
 
       try {
         await mkdir(feedbackDir, { recursive: true })
-        await appendFile(join(feedbackDir, 'inbox.jsonl'), JSON.stringify(fullEntry) + '\n', 'utf8')
+        // Write attachments first and the inbox line last: the inbox line is
+        // the durable "this report exists" signal, so it must never land
+        // while its attachments bundle is only partially written.
         if (attachmentsDir) {
           await writeAttachments(attachmentsDir, attachment!)
         }
+        await appendFile(join(feedbackDir, 'inbox.jsonl'), JSON.stringify(fullEntry) + '\n', 'utf8')
         return ok({ id })
       } catch (e) {
         const error = e as NodeJS.ErrnoException
@@ -60,7 +63,6 @@ async function writeAttachments(dir: string, attachment: FeedbackAttachment): Pr
     ['doc.md', attachment.docSnapshot],
     ['review-state.json', attachment.reviewState],
     ['dom.html', attachment.domSnapshot],
-    ['extract.json', attachment.extractSnapshot],
   ]
   for (const [name, content] of files) {
     if (content === undefined) continue
@@ -73,8 +75,7 @@ function hasAnyField(attachment?: FeedbackAttachment): boolean {
   return (
     attachment.docSnapshot !== undefined ||
     attachment.reviewState !== undefined ||
-    attachment.domSnapshot !== undefined ||
-    attachment.extractSnapshot !== undefined
+    attachment.domSnapshot !== undefined
   )
 }
 

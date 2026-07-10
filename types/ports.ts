@@ -153,8 +153,6 @@ export interface FeedbackAttachment {
   reviewState?: string
   /** DOM subtree snapshot supplied by a UI-sourced report. */
   domSnapshot?: string
-  /** Extract output in effect at submit time. */
-  extractSnapshot?: string
 }
 
 export type FeedbackErrorKind = 'write'

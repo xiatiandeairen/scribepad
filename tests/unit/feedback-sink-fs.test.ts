@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { createFsFeedbackSink } from '../../server/adapters/feedback-sink-fs.js'
 import type { FeedbackEntry } from '../../types/ports.js'
@@ -117,20 +117,19 @@ describe('createFsFeedbackSink — attachments', () => {
     expect(lines[0]!.attachmentsDir).toBe(dir)
   })
 
-  it('writes dom.html and extract.json when those fields are provided', async () => {
+  it('writes dom.html when domSnapshot is provided', async () => {
     const env = await tempEnv()
     const sink = createFsFeedbackSink({ env })
 
     const result = await sink.submit(
       { source: 'panel', text: 'dom looks wrong' },
-      { domSnapshot: '<div>x</div>', extractSnapshot: '{"goals":[]}' },
+      { domSnapshot: '<div>x</div>' },
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
     const dir = join(env.XDG_STATE_HOME!, 'scribepad', 'feedback', 'attachments', result.value.id)
     expect(await readFile(join(dir, 'dom.html'), 'utf8')).toBe('<div>x</div>')
-    expect(await readFile(join(dir, 'extract.json'), 'utf8')).toBe('{"goals":[]}')
   })
 
   it('does not create an attachments directory when attachment is omitted', async () => {
@@ -143,6 +142,26 @@ describe('createFsFeedbackSink — attachments', () => {
 
     const dir = join(env.XDG_STATE_HOME!, 'scribepad', 'feedback', 'attachments', result.value.id)
     expect(existsSync(dir)).toBe(false)
+  })
+
+  it('leaves no inbox line when the attachment write fails partway', async () => {
+    const env = await tempEnv()
+    const sink = createFsFeedbackSink({ env })
+    const feedbackDir = join(env.XDG_STATE_HOME!, 'scribepad', 'feedback')
+    await mkdir(feedbackDir, { recursive: true })
+    // Block the attachments subdirectory from ever being creatable, forcing
+    // writeAttachments to fail regardless of the (randomly generated) id.
+    await writeFile(join(feedbackDir, 'attachments'), 'not a directory', 'utf8')
+
+    const result = await sink.submit(
+      { source: 'panel', text: 'attachment write should fail' },
+      { docSnapshot: '# doc' },
+    )
+    expect(result.ok).toBe(false)
+
+    // The whole submission failed — there must be no orphan inbox line
+    // pointing at an attachments bundle that never got written.
+    expect(existsSync(inboxPath(env))).toBe(false)
   })
 
   it('does not create an attachments directory when attachment fields are all empty/undefined', async () => {
