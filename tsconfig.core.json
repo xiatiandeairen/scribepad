@@ -14,6 +14,7 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
+    "types": [],
     "baseUrl": ".",
     "paths": {
       "@types/*": ["types/*"]

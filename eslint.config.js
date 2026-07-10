@@ -33,6 +33,10 @@ export default tseslint.config(
               group: ['**/server/**', '**/src/**', '**/adapters/**', '@hono/*'],
               message: 'core cannot import server / src / adapters (E0)',
             },
+            {
+              group: ['node:*'],
+              message: 'core must not import Node.js builtins (E0)',
+            },
           ],
         },
       ],
