@@ -9,7 +9,9 @@
 import { serve } from '@hono/node-server'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createApp } from './app.js'
 import {
   cleanupRegistry,
@@ -21,7 +23,52 @@ import {
 } from './registry.js'
 import { SessionManager } from './services/session-manager.js'
 import { createStubLlmRunner } from './adapters/llm-stub.js'
+import { createFsFeedbackSink } from './adapters/feedback-sink-fs.js'
 import { DEFAULT_CONFIG, loadConfig, writeProjectLocalAiConfig } from './config.js'
+
+if (process.argv[2] === 'feedback') {
+  await runFeedbackCommand(process.argv.slice(3))
+  process.exit(process.exitCode ?? 0)
+}
+
+/**
+ * `scribepad feedback "<text>"` — records a report straight to the shared
+ * inbox via FeedbackSink, bypassing HTTP so it works without a server running
+ * (why: workflow gripes / ideas happen outside any open document session).
+ */
+async function runFeedbackCommand(feedbackArgs: string[]): Promise<void> {
+  const text = feedbackArgs.find((item) => !item.startsWith('-'))
+  if (!text) {
+    console.error('Usage: scribepad feedback "<text>"')
+    process.exitCode = 1
+    return
+  }
+
+  const scribepadCommit = await readPackageVersion()
+  const result = await createFsFeedbackSink().submit({
+    source: 'cli',
+    text,
+    ...(scribepadCommit ? { context: { scribepadCommit } } : {}),
+  })
+
+  if (!result.ok) {
+    console.error(result.error.message)
+    process.exitCode = 1
+    return
+  }
+  console.log(`Feedback recorded: ${result.value.id}`)
+}
+
+/** Best-effort read of package.json's version; undefined if it can't be read. */
+async function readPackageVersion(): Promise<string | undefined> {
+  try {
+    const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../package.json')
+    const pkg = JSON.parse(await readFile(pkgPath, 'utf8')) as { version?: string }
+    return pkg.version
+  } catch {
+    return undefined
+  }
+}
 
 const args = process.argv.slice(2)
 const waitMode = args.includes('--wait')
