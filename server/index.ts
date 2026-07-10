@@ -26,7 +26,9 @@ import { createStubLlmRunner } from './adapters/llm-stub.js'
 import { createFsFeedbackSink } from './adapters/feedback-sink-fs.js'
 import { DEFAULT_CONFIG, loadConfig, writeProjectLocalAiConfig } from './config.js'
 
-if (process.argv[2] === 'feedback') {
+// A real file literally named `feedback` (no extension) in cwd takes priority
+// over the subcommand — `scribepad <path>` must still be able to open it.
+if (process.argv[2] === 'feedback' && !existsSync(resolve('feedback'))) {
   await runFeedbackCommand(process.argv.slice(3))
   process.exit(process.exitCode ?? 0)
 }

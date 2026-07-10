@@ -9,7 +9,7 @@
  */
 import { test, expect } from '@playwright/test'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -51,6 +51,31 @@ test.describe('scribepad feedback CLI', () => {
       await rm(tmp, { recursive: true, force: true })
     }
   })
+
+  test('opens a real file literally named "feedback" instead of the subcommand', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'scribepad-feedback-e2e-'))
+    const env = makeEnv(tmp)
+    const docPath = join(tmp, 'feedback')
+    await writeFile(docPath, '# Feedback doc\n\nThis file is literally named `feedback`.\n', 'utf8')
+
+    let child: Awaited<ReturnType<typeof spawnCli>> | undefined
+    try {
+      // A trailing text arg makes this unambiguous: if the buggy code takes
+      // the subcommand branch, it submits "not a real report" as feedback
+      // text and exits immediately after printing a confirmation. If the fix
+      // holds, that text is simply an ignored extra positional and the doc at
+      // ./feedback opens as a session instead (process keeps running).
+      child = spawnCli(['feedback', 'not a real report'], env, tmp)
+      await sleep(1500)
+      expect(child.stdoutSoFar()).not.toMatch(/feedback recorded/i)
+
+      const inboxPath = join(tmp, 'xdg-state', 'scribepad', 'feedback', 'inbox.jsonl')
+      await expect(access(inboxPath)).rejects.toThrow()
+    } finally {
+      child?.kill()
+      await rm(tmp, { recursive: true, force: true })
+    }
+  })
 })
 
 function makeEnv(tmp: string): Record<string, string> {
@@ -84,4 +109,22 @@ function runCli(
       reject(error)
     })
   })
+}
+
+/** Spawns the CLI without waiting for exit — for cases that stay running (doc-open, no --wait). */
+function spawnCli(argv: string[], extraEnv: Record<string, string>, cwd: string) {
+  let stdout = ''
+  const child = spawn(process.execPath, [SERVER_ENTRY, ...argv], {
+    cwd,
+    env: { ...process.env, NODE_ENV: 'production', ...extraEnv },
+  })
+  child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()))
+  return {
+    stdoutSoFar: () => stdout,
+    kill: () => child.kill('SIGTERM'),
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
 }
