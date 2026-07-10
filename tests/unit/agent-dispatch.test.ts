@@ -239,3 +239,39 @@ describe('dispatchAgent — not-implemented placeholders', () => {
     if (final.type === 'final') expect(final.paragraphs[0]).toContain('v2')
   })
 })
+
+// ── command on review-doc sessions (docKind: 'review') ───────────────────────
+//
+// extract.points is always [] for a review doc, so verify()'s plan-shaped
+// presence rules (STR-01/02/03: missing 目标/做法/验收) fire on every review
+// doc regardless of its actual completeness, and the refs graph is vacuously
+// "0 labels, 0 edges, clean". Both commands must answer honestly instead of
+// reusing the plan-only verify/graph machinery.
+describe('dispatchAgent — command on review-doc sessions', () => {
+  const source = readFixture('tests/fixtures/review-standard.md')
+  const reviewDeps = makeDeps(source)
+
+  it('ai-review does not report the plan-shaped false blockers (STR-01/02/03) on a review doc', async () => {
+    const events = await collect({ type: 'command', id: 'ai-review' }, reviewDeps)
+    const final = events.at(-1)!
+    expect(final.type).toBe('final')
+    if (final.type !== 'final') return
+    const joined = final.paragraphs.join('\n')
+    expect(joined).not.toContain('STR-01')
+    expect(joined).not.toContain('STR-02')
+    expect(joined).not.toContain('STR-03')
+    expect(joined).toContain('review 文档')
+    expect(final.actions).toEqual([])
+  })
+
+  it('ai-refs does not report a vacuous "0 labels" graph on a review doc', async () => {
+    const events = await collect({ type: 'command', id: 'ai-refs' }, reviewDeps)
+    const final = events.at(-1)!
+    expect(final.type).toBe('final')
+    if (final.type !== 'final') return
+    const joined = final.paragraphs.join('\n')
+    expect(joined).not.toContain('0 个稳定标签')
+    expect(joined).toContain('review 文档')
+    expect(final.actions).toEqual([])
+  })
+})

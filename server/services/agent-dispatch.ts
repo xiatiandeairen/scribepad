@@ -90,11 +90,25 @@ export async function* dispatchAgent(
   }
 }
 
-/** command — zero LLM, deterministic reuse of core/verify. */
+/**
+ * command — zero LLM, deterministic reuse of core/verify.
+ *
+ * ai-review/ai-refs run core/verify's presence rules and the refs graph off
+ * `extract.points`, which is always empty for a review doc (docKind:'review'
+ * — its units live in `extract.review`, not `points`). Left unguarded, that
+ * makes ai-review report false STR-01/02/03 blockers ("缺目标/缺做法/缺验收")
+ * on every review doc and ai-refs report a vacuous always-clean "0 labels"
+ * graph. Both commands answer honestly instead on a review-doc session.
+ */
 function* dispatchCommand(
   request: Extract<AgentRequest, { type: 'command' }>,
   deps: AgentDispatchDeps,
 ): Generator<AgentEvent> {
+  if (deps.extract.docKind === 'review') {
+    yield { type: 'progress', label: '正在核对文档类型…' }
+    yield { type: 'final', ...buildPlanOnlyCommandReply() }
+    return
+  }
   const problems = verify(deps.extract, { source: deps.source })
   if (request.id === 'ai-refs') {
     yield { type: 'progress', label: '正在扫描标签引用图…' }
@@ -104,6 +118,18 @@ function* dispatchCommand(
   yield { type: 'progress', label: '正在通读文档…' }
   yield { type: 'progress', label: '正在核对决策链与验收…' }
   yield { type: 'final', ...buildReviewReply(deps.extract, problems) }
+}
+
+/** Honest reply for ai-review/ai-refs on a review-doc session — see dispatchCommand's doc comment. */
+function buildPlanOnlyCommandReply(): { paragraphs: string[]; actions: AgentAction[] } {
+  return {
+    paragraphs: [
+      '这是交付审阅报告（review 文档），plan 评审 / 引用检查命令不适用。',
+      '这两个命令基于 plan 文档的目标/做法/验收结构与标签引用图，review 文档没有这些结构。',
+      '如需核对这份报告，请用§1 的裁决 / §4 的签字逐项确认，或用对话直接提问。',
+    ],
+    actions: [],
+  }
 }
 
 /** chat / explain — one honest-phased LLM round via the chat task. */
