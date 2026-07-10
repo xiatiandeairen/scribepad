@@ -96,8 +96,7 @@ server/
 │                         client-next/ 静态挂载 /next/*;/api 优先于静态兜底
 ├── routes/             # HTTP 边界
 │   ├── sessions.ts     # sessions-scoped 路由族(主面,见下)
-│   ├── session.ts      # /api/session 单会话 fallback(CLI one-shot:get / heartbeat / close)
-│   ├── file / annotations / rewrite.ts   # 非会话 fallback,经 getFallbackSession 复用会话中枢
+│   ├── session.ts      # /api/session 单会话 fallback(CLI one-shot:get,经 getFallbackSession 复用会话中枢)
 │   └── ai.ts           # AI 配置 / 状态 / 自测
 └── services/
     ├── session-manager.ts   # 会话中枢:经注入端口做 doc / annotations / signoffs /
@@ -136,7 +135,7 @@ POST /api/sessions/:id/agent                 # 单一 AI 通道(SSE:progress* �
 POST /api/sessions/:id/done                  # 合闸导出;GET .../wait 阻塞到合闸
 ```
 
-**其它**:`/api/session`(+ `/heartbeat` `/close`)、非会话 `/api/file` `/api/save` `/api/annotations` `/api/rewrite`(经 `getFallbackSession`)、`/api/ai/{config,status,test}`、`/healthz`,以及 `/next/*` 静态挂载。
+**其它**:`GET /api/session`(单会话 fallback,经 `getFallbackSession`)、`/api/ai/{config,status,test}`、`/healthz`,以及 `/next/*` 静态挂载。
 
 ## 数据流
 
