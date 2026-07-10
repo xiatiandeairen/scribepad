@@ -1,7 +1,7 @@
 /**
  * P7 — new frontend (client-next/) "完成审阅 · 交付" wiring.
  *
- * The button + its handler live in a React component (plan-app.jsx) that needs a
+ * The button + its handler live in a React component (review-app.jsx) that needs a
  * DOM to exercise; there is no build step. What *is* pure and shippable-source
  * testable is the network call that closes the `--wait` gate and the delivery
  * state machine the button reads. As in client-next-agent-net.test.ts we evaluate
@@ -28,10 +28,10 @@ type Net = {
   deliverButton: (state: DeliverState, hasSession: boolean) => DeliverButton
 }
 
-// Evaluate the shipped plan-net source with a stand-in window; harvest exports.
+// Evaluate the shipped review-net source with a stand-in window; harvest exports.
 function loadNet(): Net {
   const win: Record<string, unknown> = {}
-  const code = readFileSync(`${repoRoot}/client-next/plan-net.jsx`, 'utf8')
+  const code = readFileSync(`${repoRoot}/client-next/review-net.jsx`, 'utf8')
   new Function('window', code)(win)
   return win as unknown as Net
 }

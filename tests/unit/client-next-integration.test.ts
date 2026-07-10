@@ -4,11 +4,11 @@
  * Two seams verified here (no build step, so no browser needed):
  *  1. server static mount: createApp serves client-next/ at /next/* without
  *     shadowing /api or the SPA fallback (D-5).
- *  2. adaptExtract: the *shipped* client-next/plan-contract.jsx derivation, run
+ *  2. adaptExtract: the *shipped* client-next/review-contract.jsx derivation, run
  *     against a real ExtractResult from core/extract, produces the role / ui /
  *     title / decision fields the 8 section renderers consume (D-1 living doc).
  *
- * plan-contract.jsx is plain JS (no JSX / imports) that exports via Object.assign
+ * review-contract.jsx is plain JS (no JSX / imports) that exports via Object.assign
  * (window, …); we load it by evaluating its source with a stand-in window, so the
  * assertions run against the exact code the browser ships.
  */
@@ -33,10 +33,10 @@ function makeApp() {
   return createApp(ctx)
 }
 
-// Evaluate the shipped plan-contract.jsx with a stand-in window; harvest exports.
+// Evaluate the shipped review-contract.jsx with a stand-in window; harvest exports.
 type Contract = {
   adaptExtract: (r: unknown, m: unknown, o?: unknown) => unknown
-  buildPlanModel: (s: unknown) => Model
+  buildReviewModel: (s: unknown) => Model
 }
 type Point = { label?: string; role?: string; kind?: string; ui: Record<string, unknown> }
 type Model = {
@@ -53,7 +53,7 @@ type Model = {
   meta: Record<string, string>
 }
 function loadContract(): Contract {
-  const code = readFileSync(`${repoRoot}/client-next/plan-contract.jsx`, 'utf8')
+  const code = readFileSync(`${repoRoot}/client-next/review-contract.jsx`, 'utf8')
   const win: Record<string, unknown> = {}
   new Function('window', code)(win)
   return win as unknown as Contract
@@ -74,7 +74,7 @@ describe('server static mount /next/* (D-5)', () => {
   })
 
   it('serves jsx assets under /next/', async () => {
-    const res = await app.request('/next/plan-contract.jsx')
+    const res = await app.request('/next/review-contract.jsx')
     expect(res.status).toBe(200)
     expect(await res.text()).toContain('adaptExtract')
   })
@@ -84,10 +84,10 @@ describe('server static mount /next/* (D-5)', () => {
   })
 })
 
-describe('adaptExtract: real ExtractResult → PLAN_MODEL (D-1)', () => {
-  const { adaptExtract, buildPlanModel } = loadContract()
+describe('adaptExtract: real ExtractResult → REVIEW_MODEL (D-1)', () => {
+  const { adaptExtract, buildReviewModel } = loadContract()
   const result = extract(readFileSync(`${repoRoot}/tests/fixtures/plan-data-backend.md`, 'utf8'))
-  const model = buildPlanModel(
+  const model = buildReviewModel(
     adaptExtract(result, { project: 'scribepad', file: 'plan-data-backend.md' }),
   )
   const badge = (id: string) => model.sections.find((s) => s.id === id)?.badge
@@ -186,14 +186,14 @@ describe('adaptExtract: real ExtractResult → PLAN_MODEL (D-1)', () => {
 })
 
 // N=2: a second, structurally different plan (SOC2 auth) run through the same
-// shipped adaptExtract → buildPlanModel, so the header→ui mapping is pinned by a
+// shipped adaptExtract → buildReviewModel, so the header→ui mapping is pinned by a
 // document that does NOT share plan-data-backend's numbers. Real values were read
 // off plan-auth-soc2.md (G1–G4 / 5 non-goals / D1–D3 decided / R1 高 + R2–R5 中 /
 // P1–P4 / Q1–Q5 / 9 acceptance rows) before asserting — not copied from above.
-describe('adaptExtract: SOC2 auth plan → PLAN_MODEL (D-1, N=2)', () => {
-  const { adaptExtract, buildPlanModel } = loadContract()
+describe('adaptExtract: SOC2 auth plan → REVIEW_MODEL (D-1, N=2)', () => {
+  const { adaptExtract, buildReviewModel } = loadContract()
   const result = extract(readFileSync(`${repoRoot}/tests/fixtures/plan-auth-soc2.md`, 'utf8'))
-  const model = buildPlanModel(
+  const model = buildReviewModel(
     adaptExtract(result, { project: 'scribepad', file: 'plan-auth-soc2.md' }),
   )
   const badge = (id: string) => model.sections.find((s) => s.id === id)?.badge
