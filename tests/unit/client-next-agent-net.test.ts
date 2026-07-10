@@ -56,7 +56,7 @@ type Net = {
 // Evaluate the shipped client-next sources with a stand-in window; harvest exports.
 function loadNet(): Net {
   const win: Record<string, unknown> = {}
-  for (const file of ['client-next/agent-service.jsx', 'client-next/plan-net.jsx']) {
+  for (const file of ['client-next/agent-service.jsx', 'client-next/review-net.jsx']) {
     const code = readFileSync(`${repoRoot}/${file}`, 'utf8')
     new Function('window', code)(win)
   }

@@ -480,7 +480,7 @@ export class SessionManager {
   /**
    * Human-clickable panel URL that reopens `filePath` on the shared server. The
    * retired React SPA owned `/s/:id`; the live entry point is `/next`, where
-   * `?doc=<path>` overrides the server's default document (plan-app.jsx bootstrap
+   * `?doc=<path>` overrides the server's default document (review-app.jsx bootstrap
    * feeds the value straight to POST /api/sessions/open). The absolute path — not
    * a basename — is encoded so the round-trip resolves the same session
    * regardless of the reader's cwd.

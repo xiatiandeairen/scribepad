@@ -19,9 +19,9 @@ function createMockAgent(){
 
   /* 引用图统计（ai-refs 回复用，从模型层派生而非写死） */
   function refStats(){
-    const labeled=Object.entries(PLAN_MODEL.points).filter(([,e])=>!['sec','acc'].includes(e.kind));
-    const edges=Object.values(PLAN_MODEL.inbound).reduce((a,v)=>a+v.length,0);
-    const hot=Object.entries(PLAN_MODEL.inbound).sort((a,b)=>b[1].length-a[1].length).slice(0,2).map(([k])=>k);
+    const labeled=Object.entries(REVIEW_MODEL.points).filter(([,e])=>!['sec','acc'].includes(e.kind));
+    const edges=Object.values(REVIEW_MODEL.inbound).reduce((a,v)=>a+v.length,0);
+    const hot=Object.entries(REVIEW_MODEL.inbound).sort((a,b)=>b[1].length-a[1].length).slice(0,2).map(([k])=>k);
     return { labels:labeled.length, edges, hot };
   }
 
