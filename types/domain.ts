@@ -144,12 +144,117 @@ export interface DocMeta {
   intro?: string
 }
 
+// ── Review doc (交付审阅报告) ────────────────────────────────────────────────
+//
+// A second document kind alongside the 8-section plan: the post-execution
+// acceptance report a human reviews instead of reading code. Extraction is
+// rule-based like the plan path and shares SrcAnchor semantics, so signoffs
+// and annotations anchor on review units (D#/C#/L#) exactly as they do on
+// plan labels. See docs/review-template.md for the authoring contract.
+
+/**
+ * One §1 verdict unit — a decision the reviewer must rule on. All body fields
+ * are optional: a degraded doc yields a title-only card, never a throw.
+ */
+export interface VerdictCard {
+  /** Stable label (e.g. D1) from the `### D1. …` heading. */
+  label: string
+  /** Risk tag from the heading's `[…]` bracket (擅自决策 / 不可逆 / …). Free-form. */
+  tag?: string
+  /** The decision sentence itself (heading text after label + tag). */
+  title: string
+  /** 背景 — what was hit mid-execution that the plan did not cover. */
+  context?: string
+  /** 我选了 — the path taken. */
+  chosen?: string
+  /** 备选 — the alternative and its cost. */
+  alternative?: string
+  /** 为什么没停下来问 — why execution did not pause for the human. */
+  whyNotAsked?: string
+  /** 若否决 — rollback cost and blast radius if the reviewer rejects this. */
+  ifRejected?: string
+  /** 证据 — commit / file:line pointers. */
+  evidence?: string
+  anchor?: SrcAnchor
+}
+
+/** §2 plan↔actual reconciliation status, mapped from the status cell's ✅/⚠/❌/➕. */
+export type ReconciliationStatus = 'done' | 'deviated' | 'dropped' | 'added' | 'unknown'
+
+/** One §2 reconciliation table row — the final state of one approved-plan item. */
+export interface ReconciliationRow {
+  /** The plan item (first column). */
+  item: string
+  status: ReconciliationStatus
+  /** The explanation cell, verbatim. */
+  note?: string
+  /** Labels the note points at (e.g. ['D2', 'L1']), for click-through. */
+  refs: string[]
+  anchor?: SrcAnchor
+}
+
+/** One §3 claim row — a claimed outcome paired with its checkable evidence. */
+export interface Claim {
+  /** Stable label (e.g. C1). */
+  label: string
+  /** The claim sentence. */
+  claim: string
+  /** Evidence pointer (commit / test name / file:line). */
+  evidence?: string
+  /** How to independently re-check: a runnable command → expected output. */
+  verify?: string
+  /** True when the evidence cell is marked ⚠ unverified. */
+  unverified: boolean
+  anchor?: SrcAnchor
+}
+
+/** §4 leftover kind, mapped from the `[…]` bracket after the label. */
+export type LeftoverKind = 'deferred' | 'assumption' | 'limitation' | 'unknown'
+
+/** One §4 leftover — deferred work / unverified assumption / known limitation. */
+export interface Leftover {
+  /** Stable label (e.g. L1). */
+  label: string
+  kind: LeftoverKind
+  /** The leftover statement itself. */
+  text: string
+  /** 触发条件 (deferred) or 验证方式 (assumption) — when/how to pick this up. */
+  condition?: string
+  anchor?: SrcAnchor
+}
+
+/** One §5 drill-down entry (per-commit line). Kept near-verbatim, collapsed by default. */
+export interface ReviewDetail {
+  text: string
+  anchor?: SrcAnchor
+}
+
+/** Structured facts extracted from a review doc's five sections. */
+export interface ReviewExtract {
+  verdicts: VerdictCard[]
+  reconciliation: ReconciliationRow[]
+  claims: Claim[]
+  leftovers: Leftover[]
+  details: ReviewDetail[]
+}
+
+/** Which extraction path a document classified into. Absent means 'plan' (legacy). */
+export type DocKind = 'plan' | 'review'
+
 /** Full extraction result for one document. Never persisted — recomputed each run. */
 export interface ExtractResult {
   points: ExtractedItem[]
   decisions: DecisionCard[]
   /** Document-level meta (H1 + intro blockquote). Absent when the doc has no H1. */
   meta?: DocMeta
+  /**
+   * Document kind. Additive: absent = 'plan', so pre-review consumers are
+   * untouched. When 'review', `points`/`decisions` are empty and `review`
+   * carries the structured units.
+   */
+  docKind?: DocKind
+  /** Review-doc units. Present iff docKind === 'review'. */
+  review?: ReviewExtract
 }
 
 /**
