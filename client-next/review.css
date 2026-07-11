@@ -442,3 +442,10 @@ table.mtx.dtable tr.pick td{background:rgba(51,112,255,.055)}
 .rpt-lg.d{color:var(--fs-blue);background:rgba(51,112,255,.1)}
 .rpt-lg.c{color:var(--fs-green);background:var(--fs-green-bg)}
 .rpt-lg.l{color:var(--fs-orange);background:var(--fs-orange-bg)}
+
+/* ═══ 服务器断链横幅（review-net 心跳判定，App 挂在顶栏下方）═══ */
+.link-banner{position:fixed;top:var(--topbar-h);left:0;right:0;z-index:90;
+  display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 16px;
+  background:var(--fs-red-bg);color:var(--fs-red);border-bottom:1px solid var(--fs-border);
+  font-size:var(--fs-t3);font-weight:600}
+.link-banner::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--fs-red);flex:none}

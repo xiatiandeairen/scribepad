@@ -67,6 +67,8 @@ function App({ sessionId, doc }){
   const [rwOpen,setRwOpen]=useState(false);
   const [rwQuote,setRwQuote]=useState('');
   const [fbOpen,setFbOpen]=useState(false);       /* 面板反馈弹层（⌘/Ctrl+Shift+F）*/
+  const [link,setLink]=useState({ status:'up', fails:0 }); /* 服务器链路（心跳判定，见 review-net）*/
+  const linkDown=link.status==='down';
   const [,setDocVer]=useState(0);                 /* bump → 重渲染读取刷新后的全局 REVIEW_MODEL */
   const bumpDoc=()=>setDocVer(v=>v+1);
 
@@ -88,6 +90,26 @@ function App({ sessionId, doc }){
     if(!sessionId) return;
     getAnnotations(sessionId).then(r=>setNotes((r.annotations||[]).map(annotationToNote))).catch(()=>{});
     getSignoffs(sessionId).then(r=>setSignoffs(r.signoffs||[])).catch(()=>{});
+  },[]);
+
+  /* ── 服务器存活心跳：--wait 服务器可能先于页面死（agent 会话回收），页面若无感知，
+     一切写操作只在点击瞬间报 Failed to fetch。定时心跳驱动链路状态机；断链 →
+     顶栏横幅 + 交付/反馈禁写，恢复自动摘除。 ── */
+  useEffect(()=>{
+    if(!sessionId) return;
+    let clientId=null, stopped=false;
+    const beat=async()=>{
+      try{
+        if(!clientId){ const r=await connectReviewSession(sessionId); clientId=r.clientId; }
+        else await postHeartbeat(sessionId, clientId);
+        if(!stopped) setLink(s=>linkTransition(s,'ok'));
+      }catch(e){
+        if(!stopped) setLink(s=>linkTransition(s, linkEventOfError(e)));
+      }
+    };
+    beat();
+    const timer=setInterval(beat, 5000);
+    return ()=>{ stopped=true; clearInterval(timer); };
   },[]);
 
   /* ── hooks：跳转总线 / scroll-spy / 选区 ── */
@@ -114,6 +136,7 @@ function App({ sessionId, doc }){
   const deliverBtn=deliverButton(delivery, !!sessionId);
   async function onDeliver(){
     if(deliverBtn.disabled) return;
+    if(linkDown){ flash('服务器已断开，无法交付'); return; }
     if(!window.confirm('确定完成审阅并交付？--wait 的 agent 会据此拿回当前批准稿继续，交付不可撤销。')) return;
     setDelivery(d=>deliverTransition(d,'start'));
     try{
@@ -130,6 +153,7 @@ function App({ sessionId, doc }){
      dom 只截审阅内容主容器 #docText 的 outerHTML（buildFeedbackPayload 内再按上限截断），
      不截整个 body / documentElement，避免打爆请求体。console 从早期环形缓冲读最近 N 条。 */
   async function submitFeedback(text, category){
+    if(linkDown){ flash('服务器已断开，反馈暂时无法提交'); return; }
     const docEl=document.getElementById('docText');
     const dom=docEl?docEl.outerHTML:undefined;
     const consoleErrors=typeof window.__recentConsoleErrors==='function'?window.__recentConsoleErrors():undefined;
@@ -310,7 +334,7 @@ function App({ sessionId, doc }){
         <div className="savepill" data-st={saveState}><span className="d"></span>{saveLabel}{REVIEW_MODEL.meta.status?` · ${REVIEW_MODEL.meta.status}`:''}</div>
         <button className={`tb-btn tb-refresh${spin?' spin':''}`} title="同步 / 刷新" onClick={refresh}>{I.refresh}</button>
         <button className={`tb-deliver${deliverBtn.done?' done':''}`} title="完成审阅并把批准稿交付给 --wait 的 agent"
-          disabled={deliverBtn.disabled} onClick={onDeliver}>{I.check}<span className="an">{deliverBtn.label}</span></button>
+          disabled={deliverBtn.disabled||linkDown} onClick={onDeliver}>{I.check}<span className="an">{deliverBtn.label}</span></button>
         <div className="tb-spacer"></div>
         <button className="tb-btn kbd" onClick={()=>setCmdk(true)}>{I.search}<kbd>⌘K</kbd></button>
         <button className="tb-agent" title="配置 Agent" onClick={()=>setAgentOpen(true)}>
@@ -320,6 +344,8 @@ function App({ sessionId, doc }){
         <button className="tb-btn theme-ic" title="切换深色 / 浅色" onClick={toggleTheme}><span className="sun">{I.sun}</span><span className="moon">{I.moon}</span></button>
         <button className="tb-btn" title="设置 ⌘," onClick={()=>setSettingsOpen(true)}>{I.gear}</button>
       </header>
+
+      {linkDown && <div className="link-banner" role="alert">服务器已断开——签字 / 批注 / 交付暂时无法保存；恢复连接后此提示自动消失</div>}
 
       {chatOpen && <ChatPanel messages={messages} thinking={thinking} selCtx={selCtx}
         clearSel={()=>setSelCtx(null)} onSend={onSend} onClose={()=>setChatOpen(false)} onAct={onAct}

@@ -176,6 +176,23 @@ function buildFeedbackPayload(text, category, sessionId, domSnapshot, consoleErr
 /* 提交面板反馈：成功返回 { id }（后端 201）；非 2xx 由 fetchJson 抛错。 */
 function postFeedback(payload){ return fetchJson('POST','/api/feedback', payload); }
 
+/* ── 服务器存活感知（心跳）──
+   connect/heartbeat 路由此前只有服务端一半——面板从不调用，服务器死后页面照常可
+   交互、写操作只在点击瞬间报一句 Failed to fetch。这里补上前端半边：REST 封装 +
+   纯函数链路状态机（App 定时心跳驱动；断链 → 顶栏横幅 + 禁写）。 */
+const LINK_FAIL_THRESHOLD=2;         /* 连续 N 次心跳失败才判断链（容忍单次抖动） */
+function connectReviewSession(sessionId){ return fetchJson('POST',`${sp(sessionId)}/connect`); }
+function postHeartbeat(sessionId, clientId){ return fetchJson('POST',`${sp(sessionId)}/heartbeat`,{ clientId }); }
+/* 链路状态机：ok 复位；fail 累计，达阈值判 down。 */
+function linkTransition(state, event){
+  if(event==='ok') return { status:'up', fails:0 };
+  const fails=state.fails+1;
+  return { status:fails>=LINK_FAIL_THRESHOLD?'down':state.status, fails };
+}
+/* 心跳错误分类：带 HTTP status 说明服务器有应答（链路通，哪怕会话 404）；
+   无 status 的是网络层失败（fetch TypeError）→ 判 fail。 */
+function linkEventOfError(e){ return e&&e.status?'ok':'fail'; }
+
 /* 交付态 + 会话存在性 → 按钮呈现（无会话不可交付；交付中 / 交付后禁用）。 */
 function deliverButton(state, hasSession){
   if(!hasSession) return { disabled:true, done:false, label:'完成审阅 · 交付' };
@@ -191,4 +208,5 @@ Object.assign(window,{
   computeSrcRange, noteToAnnotation, annotationToNote, buildNoteHighlights, toggleSignoff,
   deliverTransition, deliverButton,
   FEEDBACK_DOM_MAX, FEEDBACK_CONSOLE_MAX, buildFeedbackPayload, postFeedback,
+  LINK_FAIL_THRESHOLD, connectReviewSession, postHeartbeat, linkTransition, linkEventOfError,
 });
