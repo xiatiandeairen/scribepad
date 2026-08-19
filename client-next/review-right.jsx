@@ -91,6 +91,15 @@ function NotesPanel({ notes, onResolve, onUpdate, onFocus, pulseId, selectedNote
 
 /* ── Tab 3 · 历史：版本时间线 → 原文内嵌 diff ── */
 function HistPanel({ history, diffEntry, onShowDiff }){
+  /* 版本时间线尚无后端来源（AuditEntry 未接线），history 恒为空。
+     显式说明而不是渲染空白，避免看起来像加载失败。 */
+  if(!history.length) return (
+    <div className="fade-in rb-empty">
+      {I.clock}
+      <b>还没有版本历史</b>
+      <span>AI 改写会直接写回 Markdown 源文件；版本时间线待后续接入。</span>
+    </div>
+  );
   return (
     <div className="fade-in hist">
       {history.map((h,i)=>(
