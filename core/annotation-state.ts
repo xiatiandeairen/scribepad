@@ -3,8 +3,14 @@
  *
  * Extracted verbatim from server/services/annotations.ts during the P3a
  * hexagonal split: the transition rules are the domain core and must stay
- * IO-free (E0 boundary — core imports only types/ and zod). The server service
- * centralizes the annotation lifecycle for every caller.
+ * IO-free (E0 boundary — core imports only types/ and zod).
+ *
+ * Reachability caveat: the only annotation writer today (the browser panel)
+ * creates every note as `draft` and never advances it, so session-manager's
+ * `prev.state !== next.state` guard never fires and `discussed` / `decided` are
+ * currently unreachable in production. The transitions below are exercised by
+ * unit tests only — treat them as the intended contract for the AI-rewrite
+ * lifecycle, not as behaviour any shipping path relies on.
  *
  * State machine (docs/design/architecture.md; AnnotationState in types/annotation.ts):
  *   draft     — newly created; user hasn't issued AI rewrite yet

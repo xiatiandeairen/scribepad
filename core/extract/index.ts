@@ -28,7 +28,7 @@ export { classifySection, splitSections } from './sections.js'
  * Extract a markdown source into an ExtractResult. Dispatches on docKind
  * (docs/design/document.md §识别契约): a review doc yields empty
  * points/decisions plus the structured `review` field; a plan doc runs the
- * plan documents use the eight-section path.
+ * eight-section path and leaves `review` null.
  */
 export function extract(source: string): ExtractResult {
   const tree = fromMarkdown(source, {

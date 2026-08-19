@@ -35,7 +35,7 @@ const MANDATORY_FORM = new Set([
 const GRAPH_BROKEN = new Set(['REF-01', 'REF-02', 'REF-03', 'HYG-02'])
 
 /**
- * Derive the four-tier severity for one problem.
+ * Derive the severity for one problem — blocker or warning, nothing else.
  *
  * Rule mechanism (confidence 1.0): a hard hit on required-presence /
  * mandatory-form / graph-broken → blocker; everything else deterministic

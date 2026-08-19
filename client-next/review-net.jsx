@@ -110,7 +110,7 @@ function annotationToNote(a){
   };
 }
 
-/* notes[] → { pt: {id, anchorText} }（AnnoText 渲染高亮用，替代 NOTE_ANCHORS 子串表）。
+/* notes[] → { pt: {id, anchorText} }（AnnoText 渲染高亮用）。
    anchorText 取 anchor.text（创建时选区原文，是渲染文本的子串）；每点保留第一条未解决批注。 */
 function buildNoteHighlights(notes){
   const out={};

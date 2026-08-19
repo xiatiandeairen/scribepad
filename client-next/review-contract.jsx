@@ -26,8 +26,8 @@
    │            — 仅前端导航用，非后端 label（B 是后端目标节标签）  │
    └────────────────────────────────────────────────────────────┘
 
-   消费方式：REVIEW_MODEL = buildReviewModel(REVIEW_SOURCE)（见文件尾）。
-   接真实后端时：GET /api/sessions/:id/extract → adaptExtract() → buildReviewModel。
+   消费方式（唯一路径，见 review-net.jsx）：
+   GET /api/sessions/:id/extract → adaptExtract() → buildReviewModel() → REVIEW_MODEL。
    运行边界见 docs/design/architecture.md。 */
 
 /* ── 8 类信息点 ↔ 8 节：顺序即文档顺序 ── */

@@ -4,7 +4,7 @@
  * Severity is derived from deterministic rule category and requiredness.
  */
 
-/** Four-tier problem severity — v2 expansion from the original two-tier blocker/warning. */
+/** Problem severity. Two tiers only — derived, never hand-assigned by a rule. */
 export type Severity = 'blocker' | 'warning'
 
 /**
