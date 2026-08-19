@@ -170,7 +170,8 @@ function standardExtract(): ExtractResultFixture {
           label: 'D1',
           tag: '擅自决策',
           title: 'feedback CLI 子命令与同名文件冲突时，让真实文件优先',
-          context: '实现 scribepad feedback 时发现 cwd 下若存在字面名为 feedback 的文件，语义歧义，plan 未覆盖',
+          context:
+            '实现 scribepad feedback 时发现 cwd 下若存在字面名为 feedback 的文件，语义歧义，plan 未覆盖',
           chosen: "existsSync(resolve('feedback')) 为真时按打开文档处理，子命令让位",
           alternative: '加 -- 分隔符强制区分——对用户多一层记忆负担',
           whyNotAsked: '两条路径都可逆，且文件优先与 scribepad <path> 主语义一致',
@@ -193,10 +194,25 @@ function standardExtract(): ExtractResultFixture {
         },
       ],
       reconciliation: [
-        { item: 'plan-review skill（XDG 路径编码 + --wait 桥接）', status: 'done', note: '—', refs: [] },
+        {
+          item: 'plan-review skill（XDG 路径编码 + --wait 桥接）',
+          status: 'done',
+          note: '—',
+          refs: [],
+        },
         { item: '面板反馈弹层 + 快捷键', status: 'done', note: '—', refs: [] },
-        { item: 'feedback CLI 子命令', status: 'deviated', note: '同名文件冲突处理 → D1', refs: ['D1'] },
-        { item: '附件 extractSnapshot 字段', status: 'dropped', note: '无消费方，砍掉 → L3', refs: ['L3'] },
+        {
+          item: 'feedback CLI 子命令',
+          status: 'deviated',
+          note: '同名文件冲突处理 → D1',
+          refs: ['D1'],
+        },
+        {
+          item: '附件 extractSnapshot 字段',
+          status: 'dropped',
+          note: '无消费方，砍掉 → L3',
+          refs: ['L3'],
+        },
         {
           item: '（plan 外）console 环形缓冲上限 20 条',
           status: 'added',
@@ -247,14 +263,20 @@ function standardExtract(): ExtractResultFixture {
           text: '面板 DOM 快照 20k 字符足够还原 UI 问题现场',
           condition: '连续 3 条 UI 反馈都无需追问上下文',
         },
-        { label: 'L3', kind: 'limitation', text: '反馈附件不含 extract 结果快照，分析会话需自行重算' },
+        {
+          label: 'L3',
+          kind: 'limitation',
+          text: '反馈附件不含 extract 结果快照，分析会话需自行重算',
+        },
       ],
       details: [
         {
           text: '1beeee6 fix(cli): 同名文件优先于 feedback 子命令 — server/index.ts',
           anchor: { srcStart: 3200, srcEnd: 3270 },
         },
-        { text: 'd03159c fix(server): 附件先写、inbox 行后写 — server/adapters/feedback-sink-fs.ts' },
+        {
+          text: 'd03159c fix(server): 附件先写、inbox 行后写 — server/adapters/feedback-sink-fs.ts',
+        },
         { text: '4ebb161 fix(client): 代理对安全截断 — client-next/review-net.jsx' },
       ],
     },
@@ -337,7 +359,9 @@ describe('buildReportModel: full standard-fixture-shaped input', () => {
 
   it('sets docKind and strips the meta title prefix', () => {
     expect(model.docKind).toBe('review')
-    expect(model.meta.title).toBe('dogfood 闭环——plan-review skill、反馈双入口与审阅面板接线全部交付')
+    expect(model.meta.title).toBe(
+      'dogfood 闭环——plan-review skill、反馈双入口与审阅面板接线全部交付',
+    )
     expect(model.meta.project).toBe('scribepad')
     expect(model.meta.file).toBe('tests/fixtures/review-standard.md')
   })
@@ -350,12 +374,20 @@ describe('buildReportModel: full standard-fixture-shaped input', () => {
     expect(model.meta.commitCount).toBe(18)
     expect(model.meta.date).toBe('2026-07-09')
     expect(model.meta.gates).toHaveLength(4)
-    expect(model.meta.verifyCmd).toBe('npm run typecheck && npm run lint && npm test && npm run test:e2e')
+    expect(model.meta.verifyCmd).toBe(
+      'npm run typecheck && npm run lint && npm test && npm run test:e2e',
+    )
     expect(model.meta.readingPath).toContain('§1 裁决(5min)')
   })
 
   it('computes the 5 fixed sections with their badges, in order', () => {
-    expect(model.sections.map((s) => s.id)).toEqual(['verdicts', 'recon', 'claims', 'leftovers', 'details'])
+    expect(model.sections.map((s) => s.id)).toEqual([
+      'verdicts',
+      'recon',
+      'claims',
+      'leftovers',
+      'details',
+    ])
     expect(model.sections[0]).toMatchObject({ n: '1', name: '需要你裁决', badge: '3 项' })
     // reconciliation: 1 deviated + 1 dropped + 1 added = 3
     expect(model.sections[1]).toMatchObject({ n: '2', name: '计划对账', badge: '3 偏差' })
@@ -374,8 +406,18 @@ describe('buildReportModel: full standard-fixture-shaped input', () => {
   })
 
   it('maps reconciliation status to statusLabel and keeps item/note/refs', () => {
-    expect(model.recon.map((r) => r.statusLabel)).toEqual(['按计划', '按计划', '有偏差', '未做', '新增'])
-    expect(model.recon[2]).toMatchObject({ item: 'feedback CLI 子命令', note: '同名文件冲突处理 → D1', refs: ['D1'] })
+    expect(model.recon.map((r) => r.statusLabel)).toEqual([
+      '按计划',
+      '按计划',
+      '有偏差',
+      '未做',
+      '新增',
+    ])
+    expect(model.recon[2]).toMatchObject({
+      item: 'feedback CLI 子命令',
+      note: '同名文件冲突处理 → D1',
+      refs: ['D1'],
+    })
   })
 
   it('maps leftover kind to kindLabel for every row', () => {
@@ -385,7 +427,11 @@ describe('buildReportModel: full standard-fixture-shaped input', () => {
 
   it('passes claims and details through unchanged aside from array identity', () => {
     expect(model.claims).toHaveLength(4)
-    expect(model.claims[0]).toMatchObject({ label: 'C1', claim: '全部 248 个单测通过', unverified: false })
+    expect(model.claims[0]).toMatchObject({
+      label: 'C1',
+      claim: '全部 248 个单测通过',
+      unverified: false,
+    })
     expect(model.claims[3]).toMatchObject({ label: 'C4', unverified: true })
     expect(model.details).toHaveLength(3)
     expect(model.details[0].text).toContain('1beeee6')
@@ -504,7 +550,13 @@ describe('buildReportModel: empty / missing review payload never throws', () => 
     expect(model.details).toEqual([])
     expect(model.signable).toEqual([])
     expect(model.points).toEqual({})
-    expect(model.sections.map((s) => s.badge)).toEqual(['0 项', '0 偏差', '0 未核验', '0 项', '0 条'])
+    expect(model.sections.map((s) => s.badge)).toEqual([
+      '0 项',
+      '0 偏差',
+      '0 未核验',
+      '0 项',
+      '0 条',
+    ])
   })
 
   it('never throws when extractResult itself is null/undefined', () => {
@@ -518,7 +570,10 @@ describe('buildReportModel: empty / missing review payload never throws', () => 
   })
 
   it('never throws on a partially-populated review (some arrays missing)', () => {
-    const model = net.buildReportModel({ docKind: 'review', review: { verdicts: [{ label: 'D1', title: 'x' }] } }, {})
+    const model = net.buildReportModel(
+      { docKind: 'review', review: { verdicts: [{ label: 'D1', title: 'x' }] } },
+      {},
+    )
     expect(model.verdicts).toHaveLength(1)
     expect(model.recon).toEqual([])
     expect(model.claims).toEqual([])
@@ -538,13 +593,18 @@ describe('buildReportModel: empty / missing review payload never throws', () => 
 // filters drop the plan-only entries by their stable id — never by matching
 // display text — when docKind is 'review'.
 
-// Mirrors client-next/review-mock-data.jsx's CMDS/SEL_MORE shape exactly (ids
+// Mirrors client-next/review-actions.jsx's CMDS/SEL_MORE shape exactly (ids
 // are the load-bearing part the filters key on).
 const CMDS_FIXTURE: CmdGroup[] = [
   {
     grp: 'AI 操作',
     items: [
-      { id: 'ai-review', icon: 'check', title: '评审这份 plan', sub: '检查决策自洽性与 fixture 覆盖' },
+      {
+        id: 'ai-review',
+        icon: 'check',
+        title: '评审这份 plan',
+        sub: '检查决策自洽性与 fixture 覆盖',
+      },
       { id: 'ai-refs', icon: 'link', title: '检查悬空引用', sub: '扫描标签引用图' },
     ],
   },

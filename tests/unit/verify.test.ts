@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { Problem } from '../../types/verify.js'
 import { extract } from '../../core/extract/index.js'
-import { deriveSeverity, emptyJudge, verify } from '../../core/verify/index.js'
+import { deriveSeverity, verify } from '../../core/verify/index.js'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const readFixture = (name: string): string => readFileSync(repoRoot + name, 'utf8')
@@ -68,15 +68,6 @@ describe('deriveSeverity — the Table 2 matrix', () => {
   const base = { pointId: 'x' }
   const rule = (ruleId: string, layer: Problem['layer'], aspect: Problem['aspect']) =>
     deriveSeverity({ ...base, ruleId, layer, aspect, mechanism: 'rule', confidence: 1 })
-  const ai = (confidence: number) =>
-    deriveSeverity({
-      ...base,
-      ruleId: 'QLT-01',
-      layer: 'L2',
-      aspect: 'substance',
-      mechanism: 'ai',
-      confidence,
-    })
 
   it('rule · required presence → blocker; soft presence → warning', () => {
     expect(rule('STR-01', 'L1', 'presence')).toBe('blocker')
@@ -96,64 +87,6 @@ describe('deriveSeverity — the Table 2 matrix', () => {
     expect(rule('HYG-02', 'L3', 'graph')).toBe('blocker')
     expect(rule('REF-05', 'L3', 'graph')).toBe('warning')
     expect(rule('REF-06', 'L3', 'graph')).toBe('warning')
-  })
-
-  it('ai · confidence bands into warning / suggestion / suppressed and never blocks', () => {
-    expect(ai(0.85)).toBe('warning')
-    expect(ai(0.6)).toBe('suggestion')
-    expect(ai(0.4)).toBe('suppressed')
-    // Even a perfectly-confident AI finding is clamped ≤ warning (invariant 1).
-    expect(ai(1)).toBe('warning')
-  })
-})
-
-describe('LlmJudge seam — AI findings never introduce a blocker', () => {
-  const source = readFixture('tests/fixtures/sample.md')
-  const result = extract(source)
-
-  it('default judge is empty (rules-only release)', async () => {
-    await expect(emptyJudge.judge(result, source)).resolves.toEqual([])
-  })
-
-  it('admits a quote-verified AI finding as a warning', () => {
-    const finding: Problem = {
-      id: 'ai#0',
-      ruleId: 'QLT-03',
-      layer: 'L3',
-      aspect: 'semantic',
-      mechanism: 'ai',
-      confidence: 0.85,
-      severity: 'blocker', // deliberately wrong — verify must re-derive
-      quote: '挂了等于全站登录态丢失',
-      message: '风险线索埋在正文，未沉淀为 R 条目。',
-      fixHint: 'Lift into a risk entry.',
-      needsHuman: false,
-      autoLocatable: false,
-      fingerprint: 'seed',
-    }
-    const problems = verify(result, { source, aiFindings: [finding] })
-    const admitted = problems.find((problem) => problem.ruleId === 'QLT-03')
-    expect(admitted?.severity).toBe('warning')
-  })
-
-  it('discards an AI finding whose quote does not occur in the source', () => {
-    const finding: Problem = {
-      id: 'ai#1',
-      ruleId: 'QLT-99',
-      layer: 'L3',
-      aspect: 'semantic',
-      mechanism: 'ai',
-      confidence: 0.9,
-      severity: 'warning',
-      quote: 'this string is nowhere in the document',
-      message: 'hallucinated accusation',
-      fixHint: 'n/a',
-      needsHuman: false,
-      autoLocatable: false,
-      fingerprint: 'seed',
-    }
-    const problems = verify(result, { source, aiFindings: [finding] })
-    expect(problems.some((problem) => problem.ruleId === 'QLT-99')).toBe(false)
   })
 })
 
@@ -189,50 +122,6 @@ describe('verify(tests/fixtures/plan-degraded.md) — auto-fixable single-blocke
     )
     expect(warningRuleIds.has('REF-07')).toBe(true) // decided D1 present, but goal unlabelled
     expect(warningRuleIds.has('STR-05')).toBe(true) // scope has no non-goals
-  })
-})
-
-describe('verify — all four severity tiers in one call (aiFindings injection)', () => {
-  it('blocker + warning + suggestion + suppressed all present when AI findings are mixed in', () => {
-    const source = readFixture('tests/fixtures/plan-degraded.md')
-    // conf=0.65 → suggestion (0.5–0.8 band)
-    const aiSuggestion: Problem = {
-      id: 'ai#sug',
-      ruleId: 'QLT-04',
-      layer: 'L2',
-      aspect: 'substance',
-      mechanism: 'ai',
-      confidence: 0.65,
-      severity: 'warning', // will be re-derived to suggestion
-      quote: '网关限流中间件模块',
-      message: '步骤描述含糊，缺明确产物。',
-      fixHint: 'Add specific action and artifact.',
-      needsHuman: false,
-      autoLocatable: false,
-      fingerprint: 'ai-sug',
-    }
-    // conf=0.35 → suppressed (< 0.5 band)
-    const aiSuppressed: Problem = {
-      id: 'ai#sup',
-      ruleId: 'QLT-01',
-      layer: 'L2',
-      aspect: 'substance',
-      mechanism: 'ai',
-      confidence: 0.35,
-      severity: 'warning', // will be re-derived to suppressed
-      quote: '采用滑动窗口计数器',
-      message: '理由疑似同义反复。',
-      fixHint: 'Strengthen the rationale.',
-      needsHuman: false,
-      autoLocatable: false,
-      fingerprint: 'ai-sup',
-    }
-    const problems = verify(extract(source), { source, aiFindings: [aiSuggestion, aiSuppressed] })
-    const tiers = new Set(problems.map((p) => p.severity))
-    expect(tiers.has('blocker')).toBe(true) // STR-03
-    expect(tiers.has('warning')).toBe(true) // REF-07 / STR-05 etc.
-    expect(tiers.has('suggestion')).toBe(true) // QLT-04 conf=0.65
-    expect(tiers.has('suppressed')).toBe(true) // QLT-01 conf=0.35
   })
 })
 

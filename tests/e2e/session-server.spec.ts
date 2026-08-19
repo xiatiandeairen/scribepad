@@ -295,13 +295,11 @@ function spawnCli(
 /**
  * Resolve the running server's origin + this CLI's session id.
  *
- * Both fresh and reuse CLIs now log a `/next/?doc=<path>` panel URL (the retired
- * SPA's `/s/:id` route — and its parseable session id — is gone), so the origin
- * is read from that line. The session id is then recovered by re-issuing the
+ * Both fresh and reuse CLIs log a `/next/?session=<id>` panel URL, so the origin
+ * is read from that line. The session id is recovered by re-issuing the
  * idempotent POST /api/sessions/open for the same document: openSession keys on
  * the resolved path, so this returns the very session the CLI opened rather than
- * a new one. This also covers the reuse case, whose id `GET /api/session`
- * (fallback = first session) cannot report.
+ * a new one.
  */
 async function resolveCliServer(
   child: ChildProcessWithoutNullStreams,
@@ -334,7 +332,7 @@ function waitForServerOrigin(
     const timer = setTimeout(() => reject(new Error('timed out waiting for server URL')), 10_000)
     const onData = (chunk: Buffer): void => {
       buffer += chunk.toString('utf8')
-      // Fresh CLIs print `/next/`; reuse CLIs print `/next/?doc=<path>`.
+      // Fresh and reused CLIs print a session-bound `/next/` URL.
       const panelMatch = buffer.match(/(http:\/\/(?:127\.0\.0\.1|localhost):\d+)\/next\//)
       if (panelMatch) {
         clearTimeout(timer)

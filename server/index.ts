@@ -167,7 +167,7 @@ const port = explicitPort ?? 0
 const server = serve({ fetch: app.fetch, port, hostname: config.host }, async (info) => {
   baseUrl = `http://${config.host}:${info.port}`
   const opened = await sessionManager.openSession(filePath)
-  const panelUrl = `${baseUrl}/next/`
+  const panelUrl = opened.url
   log(`[scribepad] serving ${filePath}`)
   log(`[scribepad] panel  ${panelUrl}`)
   if (openFlag) openBrowser(panelUrl)

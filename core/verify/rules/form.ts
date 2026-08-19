@@ -2,7 +2,7 @@
  * L2 · Form (形态半, deterministic, confidence 1.0). Mandatory substructure
  * (decision three-part, checkable verification, ordered steps, placeholder
  * residue) → blocker; recommended substructure and optional-role fields →
- * warning. The substance half (QLT-*) is the AI mechanism and is not run here.
+ * warning.
  *
  * CHK-01 / CHK-02 need block structure the ExtractedItem does not carry (a task
  * marker / ordered marker), so they read the raw source via each point's anchor.

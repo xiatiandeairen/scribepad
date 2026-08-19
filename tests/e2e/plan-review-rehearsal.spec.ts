@@ -234,9 +234,9 @@ async function assertSingleLiveServer(
   childPid: number | undefined,
   env: Record<string, string>,
 ): Promise<void> {
-  const registry = JSON.parse(
-    readFileSync(runtimeRegistryPath(REPO_ROOT, env), 'utf8'),
-  ) as { pid: number }
+  const registry = JSON.parse(readFileSync(runtimeRegistryPath(REPO_ROOT, env), 'utf8')) as {
+    pid: number
+  }
   expect(registry.pid).toBe(childPid)
 }
 
@@ -252,7 +252,10 @@ async function openSessionId(origin: string, filePath: string): Promise<string> 
   return body.sessionId
 }
 
-function spawnCli(argv: string[], extraEnv: Record<string, string>): ChildProcessWithoutNullStreams {
+function spawnCli(
+  argv: string[],
+  extraEnv: Record<string, string>,
+): ChildProcessWithoutNullStreams {
   return spawn(process.execPath, argv, {
     cwd: REPO_ROOT,
     env: { ...process.env, NODE_ENV: 'production', ...extraEnv },

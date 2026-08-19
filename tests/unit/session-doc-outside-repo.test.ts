@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { SessionManager } from '../../server/services/session-manager.js'
-import { documentStatePath, exportPathFor, legacySidecarPath } from '../../server/paths.js'
+import { documentStatePath, exportPathFor } from '../../server/paths.js'
 import type { LlmRunner } from '../../types/ports.js'
 import type { Annotation } from '../../types/annotation.js'
 import type { Signoff } from '../../types/domain.js'
@@ -74,7 +74,6 @@ describe('SessionManager — docPath outside repoRoot (XDG plan-storage location
     const { repoRoot, xdg, docPath, env } = await setup()
     const expectedSidecarPath = documentStatePath(repoRoot, docPath, env)
     const expectedExportPath = exportPathFor(repoRoot, docPath, env)
-    const legacyPath = legacySidecarPath(docPath)
 
     // Sanity: the doc really is outside repoRoot, and the computed sidecar /
     // export paths land under XDG state — nowhere near the doc's own directory.
@@ -101,19 +100,20 @@ describe('SessionManager — docPath outside repoRoot (XDG plan-storage location
     const extracted = await manager.extract(opened.sessionId)
     expect(extracted.points.length).toBeGreaterThan(0)
 
-    // 3. annotate — round-trips through the sidecar store; no file appears
-    // beside the doc (the legacy in-repo sidecar path stays untouched since
-    // no legacy file was ever seeded here).
+    // 3. annotate — round-trips through the canonical XDG state store.
     await manager.writeAnnotations(opened.sessionId, [makeAnnotation('a-1')])
-    await expect(manager.readAnnotations(opened.sessionId)).resolves.toEqual([makeAnnotation('a-1')])
+    await expect(manager.readAnnotations(opened.sessionId)).resolves.toEqual([
+      makeAnnotation('a-1'),
+    ])
     expect(existsSync(expectedSidecarPath)).toBe(true)
-    expect(existsSync(legacyPath)).toBe(false)
 
     // 4. signoff — persists to the same sidecar record, preserving the
     // annotation written in step 3 (round-trip preservation invariant, G5).
     await manager.writeSignoffs(opened.sessionId, [makeSignoff('g1')])
     await expect(manager.readSignoffs(opened.sessionId)).resolves.toEqual([makeSignoff('g1')])
-    await expect(manager.readAnnotations(opened.sessionId)).resolves.toEqual([makeAnnotation('a-1')])
+    await expect(manager.readAnnotations(opened.sessionId)).resolves.toEqual([
+      makeAnnotation('a-1'),
+    ])
 
     // 5. rewrite-apply — the LLM-driven splice reads and writes the doc at
     // its real (outside-repo) location; nothing is written to repoRoot.
@@ -139,43 +139,5 @@ describe('SessionManager — docPath outside repoRoot (XDG plan-storage location
     expect(done.outputPath).toBe(expectedExportPath)
     await expect(readFile(done.outputPath, 'utf8')).resolves.toBe(rewrittenContent)
     expect(() => manager.getSession(opened.sessionId)).toThrow(/Session not found/)
-
-    // Across the whole lifecycle, nothing ever landed beside the document
-    // itself except the document file we wrote to on purpose.
-    expect(existsSync(legacyPath)).toBe(false)
-  })
-
-  it('legacySidecarPath migration: a legacy in-repo-style sidecar co-located with the XDG doc is picked up on first read, then the canonical XDG sidecar takes over', async () => {
-    const { repoRoot, docPath, env } = await setup()
-    const legacyPath = legacySidecarPath(docPath)
-    // Seed a legacy sidecar sitting next to the doc, inside the XDG plans
-    // directory (not repoRoot) — the only place legacySidecarPath ever
-    // resolves to, since it derives purely from dirname(docPath).
-    await writeFile(
-      legacyPath,
-      JSON.stringify({ version: 4, annotations: [makeAnnotation('legacy-1')] }),
-      'utf8',
-    )
-
-    const manager = new SessionManager({ repoRoot, env })
-    const opened = await manager.openSession(docPath)
-
-    // First read migrates the legacy file's content into the canonical XDG
-    // path computed from docIdFor's hash.
-    await expect(manager.readAnnotations(opened.sessionId)).resolves.toEqual([
-      makeAnnotation('legacy-1'),
-    ])
-    const canonicalPath = documentStatePath(repoRoot, docPath, env)
-    expect(existsSync(canonicalPath)).toBe(true)
-
-    // The legacy file itself is never deleted or rewritten by the migration
-    // (readSidecar only reads it, writeSidecar always targets the XDG path) —
-    // confirms legacySidecarPath's existsSync probe is a single targeted stat
-    // of one hidden file beside the doc, not a directory scan, so pointing a
-    // docPath at a large or read-only XDG directory carries no extra cost:
-    // the probe only ever touches that one filename.
-    expect(existsSync(legacyPath)).toBe(true)
-    const legacyRaw = JSON.parse(await readFile(legacyPath, 'utf8')) as { annotations: Annotation[] }
-    expect(legacyRaw.annotations.map((a) => a.id)).toEqual(['legacy-1'])
   })
 })

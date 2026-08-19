@@ -1,7 +1,7 @@
 /**
  * Domain model for the scribepad core — extraction + confidence confirmation.
  *
- * Hand-written contracts (types/ has no runtime, per docs/architecture.md). The
+ * Hand-written contracts (types/ has no runtime, per docs/design/architecture.md). The
  * runtime Zod schemas that validate these at boundaries live in `core/schema.ts`
  * and are checked against these types via `satisfies z.ZodType<...>`, so a drift
  * between type and schema is a compile error.
@@ -150,7 +150,7 @@ export interface DocMeta {
 // acceptance report a human reviews instead of reading code. Extraction is
 // rule-based like the plan path and shares SrcAnchor semantics, so signoffs
 // and annotations anchor on review units (D#/C#/L#) exactly as they do on
-// plan labels. See docs/review-template.md for the authoring contract.
+// plan labels. See docs/design/document.md for the authoring contract.
 
 /**
  * One §1 verdict unit — a decision the reviewer must rule on. All body fields
@@ -238,7 +238,7 @@ export interface ReviewExtract {
   details: ReviewDetail[]
 }
 
-/** Which extraction path a document classified into. Absent means 'plan' (legacy). */
+/** Which extraction path a document classified into. */
 export type DocKind = 'plan' | 'review'
 
 /** Full extraction result for one document. Never persisted — recomputed each run. */
@@ -247,12 +247,8 @@ export interface ExtractResult {
   decisions: DecisionCard[]
   /** Document-level meta (H1 + intro blockquote). Absent when the doc has no H1. */
   meta?: DocMeta
-  /**
-   * Document kind. Additive: absent = 'plan', so pre-review consumers are
-   * untouched. When 'review', `points`/`decisions` are empty and `review`
-   * carries the structured units.
-   */
-  docKind?: DocKind
+  /** Review documents carry structured units in `review`; plan uses points/decisions. */
+  docKind: DocKind
   /** Review-doc units. Present iff docKind === 'review'. */
   review?: ReviewExtract
 }

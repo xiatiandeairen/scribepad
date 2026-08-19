@@ -49,7 +49,7 @@ test.describe('/next served by the production Hono server', () => {
     await rm(server.tmp, { recursive: true, force: true })
   })
 
-  for (const doc of ['plan-data-backend.md', 'tests/fixtures/plan-auth-soc2.md']) {
+  for (const doc of ['tests/fixtures/plan-data-backend.md', 'tests/fixtures/plan-auth-soc2.md']) {
     test(`renders all 8 sections with no console error: ${doc}`, async ({ browser }) => {
       test.setTimeout(45_000)
       const context = await browser.newContext()
@@ -78,7 +78,7 @@ test.describe('/next served by the production Hono server', () => {
       // 做法 steps render for both the H3 `### N.` shape (plan-data-backend) and the
       // GFM ordered-list shape (soc2) — pins the ordinal-based step derivation.
       expect(await page.locator('.steps .step').count()).toBeGreaterThan(0)
-      // Title from the live document meta (not the offline fixture).
+      // Title comes from the live document.
       await expect(page.locator('h1.doc-title')).not.toBeEmpty()
 
       expect(consoleErrors, `console errors on /next/?doc=${doc}`).toEqual([])
@@ -92,7 +92,7 @@ async function startServer(): Promise<Server> {
   // PORT set (any truthy value) => non-session mode: no registry write, no idle
   // shutdown timer, server stays up until killed. PORT=0 => OS-assigned free port
   // (no fixed-port collisions with a parallel session test).
-  const child = spawn(process.execPath, [SERVER_ENTRY, 'plan-data-backend.md'], {
+  const child = spawn(process.execPath, [SERVER_ENTRY, 'tests/fixtures/plan-data-backend.md'], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,

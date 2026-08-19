@@ -1,27 +1,16 @@
 /**
  * Verification types for the plan document validator.
  *
- * Severity is a derived field (computed by deriveSeverity from layer × mechanism ×
- * requiredness × confidence). Validators must not hard-code severity values — see
- * the derivation matrix in docs/plan-schema-layered.md Table 2.
- *
- * Invariants enforced at the schema layer (core/schema.ts):
- *   - mechanism='ai'  ⇒  severity ≤ 'warning'
- *   - severity='blocker'  ⇒  mechanism='rule' ∧ confidence===1.0
- *   - confidence < 0.5  ⇒  severity='suppressed'
+ * Severity is derived from deterministic rule category and requiredness.
  */
 
-import type { ExtractResult } from './domain.js'
-
 /** Four-tier problem severity — v2 expansion from the original two-tier blocker/warning. */
-export type Severity = 'blocker' | 'warning' | 'suggestion' | 'suppressed'
+export type Severity = 'blocker' | 'warning'
 
 /**
  * One problem found by the plan validator.
  *
  * `severity` is a derived field — validators compute it via deriveSeverity().
- * `quote` is required for mechanism='ai' problems; a problem without a quote that
- * can be located in the source text is discarded (hallucination guard).
  * `fingerprint` is used for cross-iteration deduplication, convergence detection,
  * and persistent user dismiss.
  */
@@ -31,27 +20,20 @@ export interface Problem {
   /** Rule identifier from the registry (e.g. 'DEC-01', 'HYG-02'). */
   ruleId: string
 
-  // ── Layer coordinates (L4 = mechanism + confidence, a pervasive attribute) ──
-  /** Validation layer. L4 is not a sequential check — it is expressed via mechanism + confidence. */
+  // ── Layer coordinates ──
   layer: 'L1' | 'L2' | 'L3'
   /**
    * Aspect within the layer.
    *   L1 → 'presence'
-   *   L2 → 'form' (deterministic) | 'substance' (AI)
-   *   L3 → 'graph' (deterministic) | 'semantic' (AI)
+   *   L2 → 'form'
+   *   L3 → 'graph'
    */
-  aspect: 'presence' | 'form' | 'substance' | 'graph' | 'semantic'
-  /** Renamed from v1 'source' for semantic clarity; 'rule' = deterministic. */
-  mechanism: 'rule' | 'ai'
-  /**
-   * Confidence in [0, 1].
-   *   mechanism='rule' → always 1.0
-   *   mechanism='ai'   → model self-score × sampling consistency (see Table 4)
-   */
+  aspect: 'presence' | 'form' | 'graph'
+  mechanism: 'rule'
+  /** Deterministic findings always use confidence 1. */
   confidence: number
   /**
    * Derived severity — must NOT be manually assigned by validators.
-   * Invariant: mechanism='ai' ⇒ severity ≤ 'warning'
    */
   severity: Severity
 
@@ -64,11 +46,7 @@ export interface Problem {
   path?: string
   /** Source text range; required when autoLocatable=true. */
   span?: { start: number; end: number }
-  /**
-   * Verbatim quote from the source that triggered this problem.
-   * Required for mechanism='ai'; the problem is discarded if the quote cannot
-   * be located in the source text (hallucination guard).
-   */
+  /** Verbatim quote from the source that triggered this problem. */
   quote?: string
 
   // ── Human-readable output ──
@@ -100,22 +78,4 @@ export interface Problem {
    * Hash of: ruleId + (pointId | path) + normalised(quote)
    */
   fingerprint: string
-}
-
-/**
- * Injectable port for the AI half of the layered model (L2 substance / L3
- * semantic — the QLT-* rules). Deterministic rules run inline in verify();
- * AI findings are produced here and merged back.
- *
- * Async by design: a faithful implementation self-scores across k samples
- * (Table 4). This release ships only the deterministic rules, so the composition
- * root injects a no-op returning [] — the seam exists, the AI does not run yet.
- *
- * Contract on returned problems (enforced by verify() before merge):
- *   - mechanism must be 'ai' (⇒ severity clamped to ≤ warning by derivation)
- *   - each problem must carry a `quote` that occurs in `source`, else it is
- *     discarded (hallucination guard, Table 4)
- */
-export interface LlmJudge {
-  judge(result: ExtractResult, source: string): Promise<Problem[]>
 }

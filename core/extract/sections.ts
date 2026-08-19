@@ -1,9 +1,7 @@
 /**
  * H2 section splitting + classification into the 8 InfoKind roles.
  *
- * Migrated and widened from plan-inspector's splitH2Sections /
- * classifyReviewSection / normalizeHeading: the alias table now covers all 8
- * plan sections instead of the legacy 5. Unclassifiable H2 blocks are dropped
+ * The alias table covers all eight plan sections. Unclassifiable H2 blocks are dropped
  * (a weakly-structured doc simply yields fewer sections — never a throw).
  */
 import type { Nodes, Root } from 'mdast'

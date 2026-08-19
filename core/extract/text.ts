@@ -1,9 +1,7 @@
 /**
  * Internal text primitives shared by the extractor modules.
  *
- * `hash` / `slug` are byte-for-byte the algorithm used by the legacy
- * src/lib/plan-inspector.ts so labelled ids and textHashes stay comparable
- * across the old and new extraction paths during the Strangler migration.
+ * `hash` / `slug` provide stable identifiers for extracted text.
  */
 import type { Nodes } from 'mdast'
 
@@ -21,7 +19,7 @@ export function compact(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
-/** 31-multiplier base36 hash — matches plan-inspector's textHash / slug. */
+/** 31-multiplier base36 hash. */
 export function hash(value: string): string {
   let n = 0
   for (let i = 0; i < value.length; i += 1) {

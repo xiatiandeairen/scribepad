@@ -9,7 +9,6 @@ import { Hono } from 'hono'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { sessionRoute } from './routes/session.js'
 import { sessionsRoute } from './routes/sessions.js'
 import { aiRoute } from './routes/ai.js'
 import { feedbackRoute } from './routes/feedback.js'
@@ -40,7 +39,6 @@ export function createApp(ctx: AppContext) {
 
   // API routes — must take precedence over the static catch-all below.
   app.route('/api', aiRoute(ctx))
-  app.route('/api', sessionRoute(ctx))
   app.route('/api', sessionsRoute(ctx))
   app.route('/api', feedbackRoute(ctx))
 

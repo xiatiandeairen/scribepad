@@ -1,7 +1,6 @@
 /**
  * tests/unit/dead-routes — locks the app's mounted route surface to the
- * sessions-scoped API + the two standalone endpoints that stay live
- * (GET /api/session, ai.ts). Cleanup pass: server/routes/file.ts,
+ * sessions-scoped API + standalone AI endpoints. Cleanup pass: server/routes/file.ts,
  * annotations.ts, rewrite.ts, and the heartbeat/close endpoints in
  * session.ts had no production caller (client-next uses the
  * sessions/:id/* equivalents) and must 404 once removed.
@@ -49,13 +48,9 @@ describe('dead routes are gone', () => {
     expect((await app.request('/api/session/close', { method: 'POST' })).status).toBe(404)
   })
 
-  it('keeps GET /api/session alive', async () => {
+  it('404s the retired fallback session route', async () => {
     const app = buildApp()
-    // No session opened yet — the live handler still responds (404 with a
-    // JSON body from getFallbackSession's own guard), never Hono's generic 404.
     const res = await app.request('/api/session')
     expect(res.status).toBe(404)
-    const body = await res.json()
-    expect(body).toEqual({ error: 'session is not enabled' })
   })
 })

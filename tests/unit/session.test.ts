@@ -53,9 +53,12 @@ describe('SessionManager', () => {
     const second = await manager.openSession(b)
 
     expect(first.sessionId).not.toBe(second.sessionId)
-    // url is the `/next/?doc=<path>` panel URL, keyed by document (not session id).
-    expect(first.url).toBe(`http://127.0.0.1:3000/next/?doc=${encodeURIComponent(a)}`)
-    expect(second.url).toBe(`http://127.0.0.1:3000/next/?doc=${encodeURIComponent(b)}`)
+    expect(first.url).toBe(
+      `http://127.0.0.1:3000/next/?session=${encodeURIComponent(first.sessionId)}`,
+    )
+    expect(second.url).toBe(
+      `http://127.0.0.1:3000/next/?session=${encodeURIComponent(second.sessionId)}`,
+    )
     await expect(manager.readFile(first.sessionId)).resolves.toMatchObject({ content: '# A\n' })
     await expect(manager.readFile(second.sessionId)).resolves.toMatchObject({ content: '# B\n' })
   })
@@ -90,9 +93,14 @@ describe('SessionManager', () => {
   it('keeps server alive while any session is active', async () => {
     let now = new Date('2026-05-05T12:00:00.000Z')
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-manager-'))
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
     const filePath = join(dir, 'plan.md')
     await writeFile(filePath, '# Plan\n', 'utf8')
-    const manager = new SessionManager({ repoRoot: dir, now: () => now })
+    const manager = new SessionManager({
+      repoRoot: dir,
+      env: { XDG_STATE_HOME: xdg },
+      now: () => now,
+    })
     await manager.openSession(filePath)
 
     now = new Date('2026-05-05T12:10:00.000Z')
@@ -226,9 +234,14 @@ describe('SessionManager', () => {
   it('uses active idle timeout after all active sessions are done', async () => {
     let now = new Date('2026-05-05T12:00:00.000Z')
     const dir = await mkdtemp(join(tmpdir(), 'scribepad-manager-'))
+    const xdg = await mkdtemp(join(tmpdir(), 'scribepad-state-'))
     const filePath = join(dir, 'plan.md')
     await writeFile(filePath, '# Plan\n', 'utf8')
-    const manager = new SessionManager({ repoRoot: dir, now: () => now })
+    const manager = new SessionManager({
+      repoRoot: dir,
+      env: { XDG_STATE_HOME: xdg },
+      now: () => now,
+    })
     const opened = await manager.openSession(filePath)
     await manager.done(opened.sessionId)
 

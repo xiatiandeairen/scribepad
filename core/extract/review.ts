@@ -1,6 +1,6 @@
 /**
  * Review-doc extraction: the second document kind alongside the 8-section
- * plan (docs/review-template.md — the authoring + machine-recognition
+ * plan (docs/design/document.md — the authoring + machine-recognition
  * contract). §1 裁决 → verdicts, §2 计划对账 → reconciliation, §3 声明与证据 →
  * claims, §4 遗留与假设 → leftovers, §5 变更明细 → details.
  *
@@ -28,7 +28,7 @@ import { compact, textOf } from './text.js'
 
 type ReviewSectionKind = 'verdicts' | 'reconciliation' | 'claims' | 'leftovers' | 'details'
 
-// Order mirrors the template's §1-§5 sequence (docs/review-template.md §机器识别契约).
+// Order mirrors the template's §1-§5 sequence (docs/design/document.md §识别契约).
 const REVIEW_SECTION_KEYWORDS: Array<{ kind: ReviewSectionKind; contains: string }> = [
   { kind: 'verdicts', contains: '裁决' },
   { kind: 'reconciliation', contains: '对账' },
@@ -46,7 +46,7 @@ function classifyReviewSection(heading: string): ReviewSectionKind | undefined {
 /**
  * docKind classifier: H1 starting with `Review:`/`Review：` wins outright;
  * otherwise >=2 H2 headings classifying as review sections vote it in.
- * Everything else is 'plan' (the legacy, absent-docKind path).
+ * Everything else is 'plan'.
  */
 export function detectDocKind(tree: Root): DocKind {
   const h1 = firstH1Text(tree)

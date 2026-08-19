@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, join, relative, resolve } from 'node:path'
 
 const APP_NAME = 'scribepad'
 
@@ -73,10 +73,6 @@ export function exportPathFor(
     docIdFor(repoRoot, docPath),
     'latest.agent.md',
   )
-}
-
-export function legacySidecarPath(docPath: string): string {
-  return join(dirname(docPath), '.' + basename(docPath) + '.annotations.json')
 }
 
 function hashPath(value: string): string {

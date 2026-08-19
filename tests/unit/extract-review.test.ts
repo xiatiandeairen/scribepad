@@ -28,17 +28,17 @@ describe('detectDocKind — plan/review dispatch', () => {
     expect(degraded.docKind).toBe('review')
   })
 
-  it('leaves every plan fixture and sample.md undefined (plan, zero behavior change)', () => {
+  it('classifies every plan fixture and sample.md as plan', () => {
     for (const name of planFixtures) {
       const result = extract(readFixture(name))
-      expect(result.docKind).toBeUndefined()
+      expect(result.docKind).toBe('plan')
       expect(result.review).toBeUndefined()
     }
   })
 
   it('classifies a plain-text / no-section doc as plan', () => {
-    expect(extract('plain text').docKind).toBeUndefined()
-    expect(extract('# just a title\n\nsome prose.').docKind).toBeUndefined()
+    expect(extract('plain text').docKind).toBe('plan')
+    expect(extract('# just a title\n\nsome prose.').docKind).toBe('plan')
   })
 })
 

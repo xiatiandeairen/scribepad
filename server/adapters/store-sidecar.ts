@@ -8,17 +8,15 @@
  * carry — so those are injected once via `createSidecarStore` and closed over,
  * keeping the port's `load(docId)` / `save(docId, state)` shape intact.
  *
- * This is a fresh IO adapter, not a wrapper over services/annotations.ts: the
- * old service stays untouched during the Strangler migration (P3a).
+ * The adapter owns the single persisted ReviewState shape.
  */
-import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { Sidecar } from '../../types/annotation.js'
 import type { ReviewState, ReviewStore, StoreError } from '../../types/ports.js'
 import type { Result } from '../../types/result.js'
 import { err, ok } from '../../core/result.js'
-import { docRelativePath, documentStatePath, legacySidecarPath } from '../paths.js'
+import { docRelativePath, documentStatePath } from '../paths.js'
 
 export interface SidecarStoreOptions {
   repoRoot: string
@@ -31,10 +29,7 @@ interface SidecarIo {
 }
 
 /**
- * Shared sidecar file IO: XDG-path resolution, legacy migration, metadata
- * stamping. The ReviewStore's load/save go through this one accessor so every
- * save spreads the same on-disk record and preserves fields the port does not
- * own (round-trip preservation invariant, G5).
+ * Shared state-file IO: XDG-path resolution and metadata stamping.
  */
 function createSidecarIo(opts: SidecarStoreOptions): SidecarIo {
   const { repoRoot } = opts
@@ -60,22 +55,16 @@ function createSidecarIo(opts: SidecarStoreOptions): SidecarIo {
     await writeFile(p, JSON.stringify(withDocumentMeta(data, docPath), null, 2), 'utf8')
   }
 
-  // Reads the sidecar, migrating a legacy in-repo sidecar to the XDG path on
-  // first touch. A missing file yields an empty (but metadata-stamped) sidecar.
+  // A missing state file yields an empty, metadata-stamped record.
   async function readSidecar(docPath: string): Promise<Sidecar> {
     const p = sidecarPath(docPath)
-    if (!existsSync(p)) {
-      const legacy = legacySidecarPath(docPath)
-      if (existsSync(legacy)) {
-        const raw = await readFile(legacy, 'utf8')
-        const migrated = withDocumentMeta(JSON.parse(raw) as Sidecar, docPath)
-        await writeSidecar(docPath, migrated)
-        return migrated
-      }
+    try {
+      const raw = await readFile(p, 'utf8')
+      return withDocumentMeta(JSON.parse(raw) as Sidecar, docPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       return withDocumentMeta({ version: 4, annotations: [] }, docPath)
     }
-    const raw = await readFile(p, 'utf8')
-    return withDocumentMeta(JSON.parse(raw) as Sidecar, docPath)
   }
 
   return { readSidecar, writeSidecar }
@@ -105,14 +94,7 @@ export function createSidecarStore(opts: SidecarStoreOptions): ReviewStore {
 
     async save(docId: string, state: ReviewState): Promise<Result<void, StoreError>> {
       try {
-        // Spread `existing` first so fields this port does not own — retired
-        // fields left on disk by the old frontend (a legacy `planState`, a stale
-        // `confirmStates`) — survive byte-for-byte; the known user-state fields
-        // are then written together and never clobber each other (round-trip
-        // preservation invariant, G5).
-        const existing = await readSidecar(docId)
         const data: Sidecar = {
-          ...existing,
           version: 4,
           annotations: state.annotations,
           signoffs: state.signoffs,

@@ -19,10 +19,10 @@
   },
   "scripts": {
     "dev": "npm run dev:server",
-    "dev:server": "PORT=3001 tsx watch --include types --include server server/index.ts plan-data-backend.md",
+    "dev:server": "PORT=3001 tsx watch --include types --include server server/index.ts tests/fixtures/plan-light.md",
     "build": "rm -rf dist && tsc -p tsconfig.server.json",
     "prepare": "npm run build",
-    "start": "NODE_ENV=production node dist/server/index.js plan-data-backend.md",
+    "start": "NODE_ENV=production node dist/server/index.js",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -35,7 +35,6 @@
     "dist",
     "client-next",
     "README.md",
-    "README.zh-CN.md",
     "docs/assets/scribepad-review-demo.gif"
   ],
   "dependencies": {

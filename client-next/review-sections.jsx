@@ -1,6 +1,6 @@
 /* ═══ Spec Plan — 8 节渲染器注册表 ═══
    每节一个组件，统一签名：({ sec, points, ctx })
-     sec    — 节定义（含 kicker / lead / extras，见 review-fixture）
+     sec    — 节定义（含 kicker / lead / extras）
      points — 该节的信息点（REVIEW_MODEL.byKind[sec.kind]）
      ctx    — { signed, toggleSign } 等交互回调
    新增 / 替换某节形态：写一个组件，注册进 SECTION_RENDERERS 即可。
@@ -8,7 +8,7 @@
 
 /* ── 批注锚点：把批注的 anchorText 包成可点高亮 ──
    NOTE_HIGHLIGHTS（pt → {id, anchorText}）由 App 从当前 notes（后端 annotation.anchor
-   结构化锚点）派生（buildNoteHighlights），替代原 mock 的 NOTE_ANCHORS 子串表。 */
+   结构化锚点）派生（buildNoteHighlights）。 */
 function AnnoText({ s, pt }){
   const note=(window.NOTE_HIGHLIGHTS||{})[pt];
   if(!note||!String(s).includes(note.anchorText)) return <T s={s}/>;

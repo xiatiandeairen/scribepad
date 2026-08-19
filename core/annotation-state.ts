@@ -4,9 +4,9 @@
  * Extracted verbatim from server/services/annotations.ts during the P3a
  * hexagonal split: the transition rules are the domain core and must stay
  * IO-free (E0 boundary — core imports only types/ and zod). The server service
- * keeps its own copy until callers migrate onto this one (Strangler Fig).
+ * centralizes the annotation lifecycle for every caller.
  *
- * State machine (docs/architecture.md; AnnotationState in types/annotation.ts):
+ * State machine (docs/design/architecture.md; AnnotationState in types/annotation.ts):
  *   draft     — newly created; user hasn't issued AI rewrite yet
  *   discussed — AI rewrite in flight or returned, awaiting user decision
  *   decided   — locked to prevent AI drift; AI rewrite filtered server-side

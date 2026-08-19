@@ -89,7 +89,9 @@ function reviewLabelsOf(review: ReviewExtract): string[] {
 /** definedLabels for the jump whitelist: extract.points for a plan doc, review units for a review doc. */
 function definedLabelsOf(extract: ExtractResult): string[] {
   if (extract.docKind === 'review') return extract.review ? reviewLabelsOf(extract.review) : []
-  return extract.points.map((point) => point.label).filter((label): label is string => Boolean(label))
+  return extract.points
+    .map((point) => point.label)
+    .filter((label): label is string => Boolean(label))
 }
 
 /** A review unit (verdict/claim/leftover) the quote falls in, with its label and display kind name. */
@@ -109,7 +111,15 @@ function findReviewFocusUnit(
   if (!needle) return undefined
 
   for (const v of review.verdicts) {
-    const fields = [v.title, v.context, v.chosen, v.alternative, v.whyNotAsked, v.ifRejected, v.evidence]
+    const fields = [
+      v.title,
+      v.context,
+      v.chosen,
+      v.alternative,
+      v.whyNotAsked,
+      v.ifRejected,
+      v.evidence,
+    ]
     if (fields.some((field) => field !== undefined && field.includes(needle))) {
       return { label: v.label, kindName: '裁决', text: v.title }
     }

@@ -125,7 +125,6 @@ export class SessionManager {
   private readonly sessions = new Map<string, DocumentSession>()
   private readonly sessionsByPath = new Map<string, string>()
   private readonly doneWaiters = new Map<string, DoneWaiter[]>()
-  private fallbackSessionId: string | undefined
   private lastActivityAt: string
   private hasEverHadActiveSession = false
 
@@ -155,7 +154,7 @@ export class SessionManager {
     const existing = existingId ? this.sessions.get(existingId) : undefined
     if (existing && existing.status !== 'closed') {
       this.touch(existing)
-      return { sessionId: existing.id, url: this.docPanelUrl(absolutePath) }
+      return { sessionId: existing.id, url: this.docPanelUrl(existing.id) }
     }
 
     const now = this.now().toISOString()
@@ -174,17 +173,9 @@ export class SessionManager {
     }
     this.sessions.set(id, session)
     this.sessionsByPath.set(absolutePath, id)
-    this.fallbackSessionId ??= id
     this.hasEverHadActiveSession = true
     this.lastActivityAt = now
-    return { sessionId: id, url: this.docPanelUrl(absolutePath) }
-  }
-
-  getFallbackSession(): DocumentSession {
-    const id = this.fallbackSessionId
-    const session = id ? this.sessions.get(id) : undefined
-    if (!session) throw new Error('No document session is open')
-    return session
+    return { sessionId: id, url: this.docPanelUrl(id) }
   }
 
   getSession(id: string): DocumentSession {
@@ -472,16 +463,8 @@ export class SessionManager {
     this.lastActivityAt = now
   }
 
-  /**
-   * Human-clickable panel URL that reopens `filePath` on the shared server. The
-   * retired React SPA owned `/s/:id`; the live entry point is `/next`, where
-   * `?doc=<path>` overrides the server's default document (review-app.jsx bootstrap
-   * feeds the value straight to POST /api/sessions/open). The absolute path — not
-   * a basename — is encoded so the round-trip resolves the same session
-   * regardless of the reader's cwd.
-   */
-  private docPanelUrl(filePath: string): string {
-    return `${this.baseUrl()}/next/?doc=${encodeURIComponent(filePath)}`
+  private docPanelUrl(sessionId: string): string {
+    return `${this.baseUrl()}/next/?session=${encodeURIComponent(sessionId)}`
   }
 
   private resolveDoneWaiters(id: string, result: DoneResult): void {

@@ -26,10 +26,9 @@ export { classifySection, splitSections } from './sections.js'
 
 /**
  * Extract a markdown source into an ExtractResult. Dispatches on docKind
- * (docs/review-template.md §机器识别契约): a review doc yields empty
+ * (docs/design/document.md §识别契约): a review doc yields empty
  * points/decisions plus the structured `review` field; a plan doc runs the
- * original 8-section path unchanged — `docKind` stays absent for it, so
- * every pre-review consumer of points/decisions sees zero behavior change.
+ * plan documents use the eight-section path.
  */
 export function extract(source: string): ExtractResult {
   const tree = fromMarkdown(source, {
@@ -58,7 +57,9 @@ export function extract(source: string): ExtractResult {
     }
   }
 
-  return meta ? { points, decisions, meta } : { points, decisions }
+  return meta
+    ? { points, decisions, meta, docKind: 'plan' }
+    : { points, decisions, docKind: 'plan' }
 }
 
 /**

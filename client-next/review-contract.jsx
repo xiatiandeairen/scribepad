@@ -28,7 +28,7 @@
 
    消费方式：REVIEW_MODEL = buildReviewModel(REVIEW_SOURCE)（见文件尾）。
    接真实后端时：GET /api/sessions/:id/extract → adaptExtract() → buildReviewModel。
-   详见《接入说明.md》。 */
+   运行边界见 docs/design/architecture.md。 */
 
 /* ── 8 类信息点 ↔ 8 节：顺序即文档顺序 ── */
 const SECTION_DEFS = [
@@ -100,7 +100,7 @@ const BRIEF_OF = {
 /* ═══ buildReviewModel(source) → 视图模型 ═══
    source = { meta, sections:[{id,kicker,lead?,extras?}], extract:{points,decisions} }
    返回 { meta, sections, points(注册表), inbound(入边), legend, byKind, decisions }
-   —— 除 fixture 外全部派生，后端接入后此层零改动。 */
+   —— 展示字段全部从后端抽取结果派生。 */
 function buildReviewModel(source){
   const { meta, extract } = source;
   const secOverride = Object.fromEntries((source.sections||[]).map(s=>[s.id,s]));

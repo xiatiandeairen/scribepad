@@ -26,8 +26,7 @@ const sp=(sessionId)=>`/api/sessions/${encodeURIComponent(sessionId)}`;
 
 /* ── REST 封装（一资源一函数）── */
 function openReviewSession(doc){ return fetchJson('POST','/api/sessions/open',{ filePath:doc }); }
-/* 服务器启动时打开的文档（fallback session）—— 无 ?doc 时默认跟随它 */
-function getCurrentSession(){ return fetchJson('GET','/api/session'); }
+function getSession(sessionId){ return fetchJson('GET',sp(sessionId)); }
 function getExtract(sessionId){ return fetchJson('GET',`${sp(sessionId)}/extract`); }
 function getFile(sessionId){ return fetchJson('GET',`${sp(sessionId)}/file`); }
 function getAnnotations(sessionId){ return fetchJson('GET',`${sp(sessionId)}/annotations`); }
@@ -41,7 +40,7 @@ function postRewriteApply(sessionId, items){ return fetchJson('POST',`${sp(sessi
 function postDone(sessionId, content){ return fetchJson('POST',`${sp(sessionId)}/done`, typeof content==='string'?{ content }:undefined); }
 
 /* ExtractResult → REVIEW_MODEL（复用 contract 层派生，后端字段变更时只对齐 review-contract）。
-   docKind:'review' 走 buildReportModel（交付审阅报告）；其余（plan / 缺省）走原路径不变。 */
+   docKind:'review' 走 buildReportModel（交付审阅报告）；plan 走 plan model。 */
 function buildModelFromExtract(result, doc){
   const file=String(doc).split('/').pop();
   if(result&&result.docKind==='review') return buildReportModel(result, { project:'scribepad', file });
@@ -202,7 +201,7 @@ function deliverButton(state, hasSession){
 }
 
 Object.assign(window,{
-  fetchJson, openReviewSession, getCurrentSession, getExtract, getFile,
+  fetchJson, openReviewSession, getSession, getExtract, getFile,
   getAnnotations, postAnnotations, getSignoffs, postSignoffs, postRewriteApply, postDone,
   buildModelFromExtract, applyReviewUpdate, fetchReviewUpdate,
   computeSrcRange, noteToAnnotation, annotationToNote, buildNoteHighlights, toggleSignoff,

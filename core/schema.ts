@@ -2,7 +2,7 @@
  * Compile-time type↔schema drift guard. Each Zod schema is pinned to its
  * hand-written type in types/domain.ts via `satisfies z.ZodType<...>`, so a
  * drift between the two fails to compile. No runtime consumer yet — these
- * schemas exist purely for the compile-time guard. See docs/architecture.md.
+ * schemas exist purely for the compile-time guard. See docs/design/architecture.md.
  *
  * zod is the core's validation tool, not a framework — allowed under the E0
  * boundary (which bars hono/react/execa/server/src from core).
@@ -145,7 +145,7 @@ export const extractResultSchema = z.object({
   points: z.array(extractedItemSchema),
   decisions: z.array(decisionCardSchema),
   meta: docMetaSchema.optional(),
-  docKind: z.enum(['plan', 'review']).optional(),
+  docKind: z.enum(['plan', 'review']),
   review: reviewExtractSchema.optional(),
 }) satisfies z.ZodType<ExtractResult>
 

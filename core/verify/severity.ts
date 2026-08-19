@@ -2,12 +2,8 @@
  * Severity derivation — the code form of Table 2 (severity推导矩阵).
  *
  * Severity is never hand-assigned by a rule; it is a pure function of
- * (layer × aspect × mechanism × confidence), classified per ruleId. This is the
- * single place the four tiers blocker/warning/suggestion/suppressed are decided,
- * so the schema-layer invariants hold by construction:
- *   - mechanism='ai'      ⇒ severity ≤ 'warning'  (an AI finding can never block)
- *   - severity='blocker'  ⇒ mechanism='rule' ∧ confidence===1.0
- *   - confidence < 0.5    ⇒ severity='suppressed'
+ * (layer × aspect), classified per ruleId. This is the single place blocker /
+ * warning is decided.
  */
 import type { Problem, Severity } from '../../types/verify.js'
 
@@ -44,8 +40,7 @@ const GRAPH_BROKEN = new Set(['REF-01', 'REF-02', 'REF-03', 'HYG-02'])
  * Rule mechanism (confidence 1.0): a hard hit on required-presence /
  * mandatory-form / graph-broken → blocker; everything else deterministic
  * (soft-required, recommended substructure, optional-role field, graph gap) →
- * warning. AI mechanism: confidence bands it into warning / suggestion /
- * suppressed and can never exceed warning.
+ * warning.
  *
  * Optional-role cap (risk / precondition / open-question L1·L2 ≤ warning) holds
  * automatically: no optional-role ruleId is registered in HARD_PRESENCE or
@@ -54,13 +49,6 @@ const GRAPH_BROKEN = new Set(['REF-01', 'REF-02', 'REF-03', 'HYG-02'])
  * escapes the cap.
  */
 export function deriveSeverity(p: SeverityInput): Severity {
-  if (p.mechanism === 'ai') {
-    if (p.confidence >= 0.8) return 'warning'
-    if (p.confidence >= 0.5) return 'suggestion'
-    return 'suppressed'
-  }
-
-  // mechanism === 'rule' → confidence is 1.0 by construction.
   if (p.layer === 'L1' && p.aspect === 'presence') {
     return HARD_PRESENCE.has(p.ruleId) ? 'blocker' : 'warning'
   }

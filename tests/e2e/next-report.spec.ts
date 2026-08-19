@@ -33,7 +33,12 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Annotation } from '../../types/annotation'
-import type { AnnotationsResponse, ExtractResponse, FileResponse, OpenSessionResponse } from '../../types/api'
+import type {
+  AnnotationsResponse,
+  ExtractResponse,
+  FileResponse,
+  OpenSessionResponse,
+} from '../../types/api'
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..')
 const SERVER_ENTRY = resolve(REPO_ROOT, 'dist/server/index.js')

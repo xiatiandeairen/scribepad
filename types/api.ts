@@ -124,7 +124,6 @@ export interface AiStatusResponse {
   lastCheckedAt?: string
 }
 
-// GET /api/session
 export interface SessionResponse {
   id: string
   filePath: string
@@ -142,9 +141,7 @@ export interface OpenSessionRequest {
 
 export interface OpenSessionResponse {
   sessionId: string
-  // Human-clickable `/next/?doc=<path>` panel URL; opens this document on the
-  // shared server. (The retired SPA's `/s/:id` route is gone.) Machine callers
-  // use `sessionId`; the CLI reuse branch prints `url`.
+  // Human-clickable panel URL bound to this session.
   url: string
 }
 

@@ -46,9 +46,10 @@ function App({ sessionId, doc }){
   const [toast,flash]=useToast();
 
   /* ── 会话 / 消息 ── */
-  const [sessions,setSessions]=useState(SESSIONS);
-  const [activeSid,setActiveSid]=useState(SESSIONS[0].id);
-  const [messages,setMessages]=useState(SESSIONS[0].msgs);
+  const initialChat={ id:'chat-1', title:'当前文档', time:'刚刚', msgs:[] };
+  const [sessions,setSessions]=useState([initialChat]);
+  const [activeSid,setActiveSid]=useState(initialChat.id);
+  const [messages,setMessages]=useState([]);
   const [thinking,setThinking]=useState(null);
   const [selCtx,setSelCtx]=useState(null);
 
@@ -60,7 +61,7 @@ function App({ sessionId, doc }){
   const [signoffs,setSignoffs]=useState([]);      /* 后端 Signoff[] 为单一真源 */
   const signed=signoffs.map(s=>s.label);          /* 派生：UI 只认 label 列表 */
   const [notes,setNotes]=useState([]);            /* 后端 annotations（GET 加载） */
-  const [history]=useState(HIST0);
+  const [history]=useState([]);
   const [pulseNoteId,setPulseNoteId]=useState(null);
   const [diffEntry,setDiffEntry]=useState(null);
   const [selectedNotes,setSelectedNotes]=useState([]);
@@ -72,7 +73,7 @@ function App({ sessionId, doc }){
   const [,setDocVer]=useState(0);                 /* bump → 重渲染读取刷新后的全局 REVIEW_MODEL */
   const bumpDoc=()=>setDocVer(v=>v+1);
 
-  /* AnnoText 高亮源：从当前 notes 的结构化锚点派生（替代 mock NOTE_ANCHORS） */
+  /* AnnoText 高亮源：从当前 notes 的结构化锚点派生。 */
   window.NOTE_HIGHLIGHTS=buildNoteHighlights(notes);
 
   const mainRef=useRef(null), scrollRef=useRef(null), saveTimer=useRef(null);
@@ -82,7 +83,7 @@ function App({ sessionId, doc }){
     try{ await fetchReviewUpdate(sessionId, doc); bumpDoc(); }catch(_){}
   };
   const agent=useRef(null);
-  if(!agent.current) agent.current=sessionId?createRealAgent(sessionId, refreshAfterMutation):createMockAgent();
+  if(!agent.current) agent.current=createRealAgent(sessionId, refreshAfterMutation);
   const cancelAgent=useRef(null);
 
   /* ── 首屏加载：批注 / 拍板（刷新后仍在）── */
@@ -124,7 +125,6 @@ function App({ sessionId, doc }){
     saveTimer.current=setTimeout(()=>setSaveState('saved'),1400);
   }
   async function refresh(){
-    if(!sessionId){ flash('离线示例数据，无法同步'); return; }
     setSpin(true); setSaveState('synced');
     try{ await fetchReviewUpdate(sessionId, doc); bumpDoc(); flash('已同步到最新版本'); }
     catch(e){ flash('同步失败：'+((e&&e.message)||e)); }
@@ -282,7 +282,6 @@ function App({ sessionId, doc }){
     setRwOpen(false);
     const range=savedRange.current; const sel=(range?range.toString():'').trim(); setTool(null);
     if(!sel){ flash('请重新选中一段文字'); return; }
-    if(!sessionId){ flash('离线示例数据，无法改写'); return; }
     const label=ptLabelOfRange(range);
     const anchor=pointAnchorOf(label);
     if(!anchor){ flash('这段无法定位到原文锚点，请选其他段落'); return; }
@@ -393,12 +392,8 @@ function App({ sessionId, doc }){
   );
 }
 
-/* ═══ 数据加载：live fetch → adaptExtract → buildReviewModel → 渲染 ═══
-   默认跟随服务器启动时打开的文档（GET /api/session）；?doc= 显式覆盖打开指定文档 →
-   GET extract + file → 写入全局 REVIEW_MODEL / REVIEW_DOC_SOURCE（App 只读它们）。fetch / 派生 /
-   互转都在 review-net.jsx（后端接线层）。loading / error 用 React state（无构建环境）；
-   error 提供重试 + 离线 fixture 兜底（sessionId=null，仅只读浏览，写路径提示离线）。 */
-function ReviewBoot({ status, message, onRetry, onOffline }){
+/* session URL → extract/file → model → render。 */
+function ReviewBoot({ status, message, onRetry }){
   return (
     <div style={{ display:'grid', placeItems:'center', height:'100vh', fontFamily:'var(--sans)', color:'var(--fg)' }}>
       <div style={{ textAlign:'center', maxWidth:460, padding:'0 24px' }}>
@@ -408,7 +403,6 @@ function ReviewBoot({ status, message, onRetry, onOffline }){
               <div style={{ fontSize:18, fontWeight:600, marginBottom:8 }}>加载失败</div>
               <div style={{ opacity:.7, marginBottom:16, fontSize:13, wordBreak:'break-word' }}>{message}</div>
               <button onClick={onRetry} style={{ padding:'6px 14px', cursor:'pointer' }}>重试</button>
-              {onOffline&&<button onClick={onOffline} style={{ padding:'6px 14px', marginLeft:8, cursor:'pointer' }}>用离线示例数据</button>}
             </>}
       </div>
     </div>
@@ -418,21 +412,18 @@ function ReviewBoot({ status, message, onRetry, onOffline }){
 const reviewRoot=ReactDOM.createRoot(document.getElementById('root'));
 async function bootstrapReview(){
   reviewRoot.render(<ReviewBoot status="loading"/>);
-  const requested=new URLSearchParams(location.search).get('doc');
-  let sessionId, doc;
+  const params=new URLSearchParams(location.search);
+  let sessionId=params.get('session');
   try {
-    if(requested){                                /* ?doc= 覆盖：显式打开指定文档（多文档）*/
-      ({ sessionId }=await openReviewSession(requested)); doc=requested;
-    } else {                                      /* 默认：跟随服务器启动时打开的文档 */
-      const s=await getCurrentSession(); sessionId=s.id; doc=s.fileName;
-    }
+    const requested=params.get('doc');
+    if(!sessionId&&requested) ({ sessionId }=await openReviewSession(requested));
+    if(!sessionId) throw new Error('缺少 session 参数，请通过 scribepad <document.md> 打开');
+    const s=await getSession(sessionId);
+    const doc=s.filePath;
     await fetchReviewUpdate(sessionId, doc);        /* 写入 window.REVIEW_MODEL + REVIEW_DOC_SOURCE */
     reviewRoot.render(<App sessionId={sessionId} doc={doc}/>);
   } catch(e){
-    const onOffline=window.REVIEW_FALLBACK_SOURCE
-      ? ()=>{ window.REVIEW_MODEL=buildReviewModel(window.REVIEW_FALLBACK_SOURCE); reviewRoot.render(<App sessionId={null} doc={doc||''}/>); }
-      : null;
-    reviewRoot.render(<ReviewBoot status="error" message={String((e&&e.message)||e)} onRetry={bootstrapReview} onOffline={onOffline}/>);
+    reviewRoot.render(<ReviewBoot status="error" message={String((e&&e.message)||e)} onRetry={bootstrapReview}/>);
   }
 }
 bootstrapReview();

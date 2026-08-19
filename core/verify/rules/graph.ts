@@ -6,7 +6,6 @@
  *   - GAP (未锚定 / 无覆盖 / 位置引用 / 未登记) → the graph is merely incomplete →
  *     warning; these carry through to a "ready" verdict.
  *
- * The semantic half (QLT-*) is the AI mechanism and is not run here.
  */
 import { LABEL_TOKEN, PREFIX_KIND } from '../../extract/labels.js'
 import type { VerifyContext } from './context.js'

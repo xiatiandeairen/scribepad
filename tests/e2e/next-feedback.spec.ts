@@ -58,7 +58,7 @@ test.describe('/next panel feedback intake', () => {
       }
     })
 
-    await page.goto(`${server.origin}/next/?doc=plan-data-backend.md`)
+    await page.goto(`${server.origin}/next/?doc=tests/fixtures/plan-data-backend.md`)
     // App mounted once the first section renders.
     await expect(page.locator('.sec-h[data-sec="goal"]')).toBeVisible({ timeout: 25_000 })
 
@@ -101,7 +101,7 @@ async function readLastInboxEntry(stateHome: string): Promise<InboxEntry> {
 async function startServer(): Promise<Server> {
   const tmp = await mkdtemp(join(tmpdir(), 'scribepad-fb-e2e-'))
   const state = join(tmp, 'state')
-  const child = spawn(process.execPath, [SERVER_ENTRY, 'plan-data-backend.md'], {
+  const child = spawn(process.execPath, [SERVER_ENTRY, 'tests/fixtures/plan-data-backend.md'], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,

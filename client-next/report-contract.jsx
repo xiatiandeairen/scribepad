@@ -208,7 +208,7 @@ function buildReportModel(extractResult, docMeta) {
 
 /* ── docKind 命令过滤：cmdk / SelToolbar 更多菜单在 review 文档下隐藏 plan-only
    条目（ai-review / ai-refs 命令；dcard / risk / open 选区操作）。按 CMDS /
-   SEL_MORE（review-mock-data.jsx）里的稳定 id 精确匹配，不匹配展示文案——
+   SEL_MORE（review-actions.jsx）里的稳定 id 精确匹配，不匹配展示文案——
    文案是本地化文本，id 才是跨模块契约。plan 文档（docKind 非 'review'）原样
    透传，不产生新数组引用之外的行为变化。 ── */
 const PLAN_ONLY_CMD_IDS = new Set(['ai-review', 'ai-refs']);
