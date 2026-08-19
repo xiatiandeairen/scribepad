@@ -1,17 +1,7 @@
 /* ═══ Spec Plan — 通用 hooks ═══
-   与业务无关的可复用逻辑：持久化 state / toast / 跳转总线 /
+   与业务无关的可复用逻辑：toast / 跳转总线 /
    scroll-spy + 阅读进度 / 文档选区。review-app.jsx 组合使用。 */
 const { useState: useStateH, useRef: useRefH, useEffect: useEffectH, useCallback: useCallbackH } = React;
-
-/* ── localStorage 持久化 state（读写失败静默降级为内存态）── */
-function usePersistedState(key, initial){
-  const [val,setVal]=useStateH(()=>{
-    try{ const raw=localStorage.getItem(key); if(raw!=null) return JSON.parse(raw); }catch(_){}
-    return typeof initial==='function' ? initial() : initial;
-  });
-  useEffectH(()=>{ try{ localStorage.setItem(key,JSON.stringify(val)); }catch(_){} },[key,val]);
-  return [val,setVal];
-}
 
 /* ── toast：flash(msg) 弹出 2.2s 自动消失 ── */
 function useToast(){
@@ -128,5 +118,5 @@ function useDocSelection(mainRef){
   return { tool, setTool, savedRange, wrapSelection };
 }
 
-Object.assign(window,{ usePersistedState, useToast, flashElement, scrollToEl,
+Object.assign(window,{ useToast, flashElement, scrollToEl,
   useJumpBus, useScrollSpy, useDocSelection });
